@@ -1,6 +1,7 @@
 package ledger.engine;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -57,6 +58,7 @@ public final class LedgerEngine {
     private final Map<String, Outcome> outcomesById = new HashMap<>();
     private final Set<String> feeKeys = new HashSet<>();
     private final Set<String> missingFeePolicyKeys = new HashSet<>();
+    private final Set<String> reversedSourceIds = new HashSet<>();
     private final Map<String, Long> checkpoints = new LinkedHashMap<>();
 
     private int watermark = FIRST_DAY;
@@ -261,7 +263,7 @@ public final class LedgerEngine {
         }
         if (feeKeys.add(key)) {
             effects.add(append(new Posting(nextSequence(), recordedDay, accountId, PostingType.OVERDRAFT_FEE,
-                    tariff.negate(), day, null, key, cause)).sequence());
+                    tariff.negate(), day, null, key, null, cause)).sequence());
         }
     }
 
@@ -288,9 +290,107 @@ public final class LedgerEngine {
             case CREDIT, DEBIT -> applyCreditOrDebit(e);
             case AUTHORIZATION -> applyAuthorization(e);
             case SETTLEMENT -> applySettlement(e);
-            case REVERSAL, INSTALMENT_CREDIT ->
-                    throw new UnsupportedOperationException(e.kind() + " is not implemented yet");
+            case REVERSAL -> applyReversal(e);
+            case INSTALMENT_CREDIT -> applyInstalmentCredit(e);
         };
+    }
+
+    /**
+     * Cancels an earlier accepted CREDIT or DEBIT by appending an equal and opposite posting with the same
+     * value day, linked to the original. The original posting is never edited or removed. Fees that the
+     * original caused are not refunded: the brief gives no refund rule.
+     */
+    private Applied applyReversal(SourceEvent e) {
+        Account account = requireAccount(e);
+        requireValueDay(e);
+        String targetId = e.targetSourceId();
+        SourceEvent target = targetId == null ? null : sourcesById.get(targetId);
+        if (target == null || targetId.equals(e.sourceId())) {
+            throw new DomainException(ErrorCode.REVERSAL_TARGET_NOT_FOUND, "No source event " + targetId + " to reverse");
+        }
+        Outcome targetOutcome = outcomesById.get(targetId);
+        if (targetOutcome == null || targetOutcome.status() != Outcome.Status.ACCEPTED) {
+            throw new DomainException(ErrorCode.REVERSAL_TARGET_NOT_ACCEPTED, targetId + " was not accepted; nothing to reverse");
+        }
+        if (target.kind() != EventKind.CREDIT && target.kind() != EventKind.DEBIT) {
+            throw new DomainException(ErrorCode.REVERSAL_UNSUPPORTED_TARGET,
+                    "Only a CREDIT or DEBIT can be reversed, not " + target.kind());
+        }
+        if (!target.accountId().equals(account.id())) {
+            throw new DomainException(ErrorCode.REVERSAL_ACCOUNT_MISMATCH,
+                    targetId + " is on " + target.accountId() + ", not " + account.id());
+        }
+        Posting original = findPrincipalPosting(targetId);
+        if (original.valueDay() != e.valueDay()) {
+            throw new DomainException(ErrorCode.REVERSAL_VALUE_DAY_MISMATCH,
+                    "Reversal value Day" + e.valueDay() + " must equal " + targetId + " value Day" + original.valueDay());
+        }
+        if (reversedSourceIds.contains(targetId)) {
+            throw new DomainException(ErrorCode.REVERSAL_ALREADY_APPLIED, targetId + " was already reversed");
+        }
+        // --- validation complete
+        reversedSourceIds.add(targetId);
+        List<Long> effects = new ArrayList<>();
+        effects.add(append(new Posting(nextSequence(), watermark, account.id(), PostingType.REVERSAL,
+                original.amount().negate(), original.valueDay(), e.sourceId(), "REV|" + targetId,
+                original.sequence(), e.sourceId() + " reverses " + targetId)).sequence());
+        afterPrincipal(e, account.id(), original.valueDay(), effects);
+        return new Applied(Outcome.Status.ACCEPTED, null, "reversed " + targetId + " with "
+                + original.amount().negate() + " value Day" + original.valueDay() + "; fees already assessed are kept",
+                effects);
+    }
+
+    /**
+     * Credits a total as N child postings that sum exactly to it. The split is done in whole minor units;
+     * the first {@code remainder} children get one extra unit (10.000 BHD / 3 = 3.334, 3.333, 3.333).
+     * The parent event itself is not a posting. All children are validated before any is written.
+     */
+    private Applied applyInstalmentCredit(SourceEvent e) {
+        Account account = requireAccount(e);
+        Money total = parsePositiveAmount(account, e.currencyText(), e.amountText());
+        requireValueDay(e);
+        int count = e.instalmentCount();
+        BigInteger totalMinor = total.minorUnits();
+        if (count < 1 || BigInteger.valueOf(count).compareTo(totalMinor) > 0) {
+            throw new DomainException(ErrorCode.INVALID_INSTALMENT_COUNT,
+                    "Instalment count " + count + " must be between 1 and " + totalMinor + " minor units");
+        }
+        BigInteger[] qr = totalMinor.divideAndRemainder(BigInteger.valueOf(count));
+        int remainder = qr[1].intValueExact();
+        List<Money> children = new ArrayList<>();
+        Money check = Money.zero(account.currency());
+        for (int i = 0; i < count; i++) {
+            Money child = Money.ofMinor(account.currency(), i < remainder ? qr[0].add(BigInteger.ONE) : qr[0]);
+            children.add(child);
+            check = check.plus(child);
+        }
+        if (check.compareTo(total) != 0) {
+            throw new IllegalStateException("Instalments " + children + " do not sum to " + total);
+        }
+        // --- validation complete
+        List<Long> effects = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            effects.add(append(new Posting(nextSequence(), watermark, account.id(), PostingType.INSTALMENT_CREDIT,
+                    children.get(i), e.valueDay(), e.sourceId(), e.sourceId() + "#" + (i + 1), null,
+                    e.sourceId() + " instalment " + (i + 1) + "/" + count)).sequence());
+        }
+        afterPrincipal(e, account.id(), e.valueDay(), effects);
+        List<String> parts = new ArrayList<>();
+        for (Money c : children) {
+            parts.add(c.plain());
+        }
+        return new Applied(Outcome.Status.ACCEPTED, null,
+                "credited " + total + " as " + count + " instalments " + String.join(", ", parts), effects);
+    }
+
+    private Posting findPrincipalPosting(String sourceId) {
+        for (LedgerRecord r : records) {
+            if (r instanceof Posting p && sourceId.equals(p.sourceId())
+                    && (p.type() == PostingType.EXTERNAL_CREDIT || p.type() == PostingType.EXTERNAL_DEBIT)) {
+                return p;
+            }
+        }
+        throw new IllegalStateException("Accepted " + sourceId + " has no principal posting");
     }
 
     /**
@@ -355,7 +455,7 @@ public final class LedgerEngine {
         // --- validation complete
         List<Long> effects = new ArrayList<>();
         effects.add(append(new Posting(nextSequence(), watermark, account.id(), PostingType.SETTLEMENT_DEBIT,
-                capture.negate(), e.valueDay(), e.sourceId(), null, e.sourceId() + " capture " + authId)).sequence());
+                capture.negate(), e.valueDay(), e.sourceId(), null, null, e.sourceId() + " capture " + authId)).sequence());
         effects.add(append(new AuthorizationFact(nextSequence(), watermark, authId, account.id(),
                 e.sourceId(), AuthorizationFact.Kind.SETTLED, latest.hold(), null, null, capture)).sequence());
         afterPrincipal(e, account.id(), e.valueDay(), effects);
@@ -372,7 +472,7 @@ public final class LedgerEngine {
         List<Long> effects = new ArrayList<>();
         effects.add(append(new Posting(nextSequence(), watermark, account.id(),
                 credit ? PostingType.EXTERNAL_CREDIT : PostingType.EXTERNAL_DEBIT,
-                credit ? magnitude : magnitude.negate(), e.valueDay(), e.sourceId(), null, e.sourceId())).sequence());
+                credit ? magnitude : magnitude.negate(), e.valueDay(), e.sourceId(), null, null, e.sourceId())).sequence());
         afterPrincipal(e, account.id(), e.valueDay(), effects);
         return new Applied(Outcome.Status.ACCEPTED, null,
                 (credit ? "credited " : "debited ") + magnitude + " value Day" + e.valueDay(), effects);

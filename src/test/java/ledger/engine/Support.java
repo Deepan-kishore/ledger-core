@@ -22,6 +22,17 @@ final class Support {
         return Money.of(CurrencyCode.AED, s);
     }
 
+    static Money bhd(String s) {
+        return Money.of(CurrencyCode.BHD, s);
+    }
+
+    /** All ten fixture events plus end-of-input finalization. */
+    static LedgerEngine fullFixture() {
+        LedgerEngine engine = fixtureThrough("E10");
+        engine.finish();
+        return engine;
+    }
+
     static LedgerEngine engine() {
         return new LedgerEngine(Fixture.accounts(), LedgerEngine.standardFeeTariffs());
     }

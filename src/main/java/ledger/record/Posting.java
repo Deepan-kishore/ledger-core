@@ -13,7 +13,9 @@ import ledger.money.Money;
  * </ul>
  *
  * @param sourceId the source event that caused it, or null for engine-generated postings (fees)
- * @param key      unique business key for engine-generated postings ("FEE|ACC-001|D2"); null otherwise
+ * @param key      unique business key: a fee ("FEE|ACC-001|D2"), a reversal ("REV|E7") or an instalment
+ *                 child ("E10#1"); null otherwise
+ * @param reversesSequence for REVERSAL postings, the sequence of the posting being cancelled; else null
  * @param cause    human-readable reason: which event or close produced this posting
  */
 public record Posting(
@@ -25,6 +27,7 @@ public record Posting(
         int valueDay,
         String sourceId,
         String key,
+        Long reversesSequence,
         String cause) implements LedgerRecord {
 
     public Posting {

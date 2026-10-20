@@ -83,3 +83,21 @@ All times are UTC, taken with `date -u` while working.
 - New tests: `OverdraftFeeTest` (8) and `DayCloseTest` (5). `mvn test` → 48 passed.
 - Checked the tests catch a real bug: switched off the closed-day re-checks → 10 failures; restored.
 - Next: reversal (E9) and instalments (E10).
+
+## 2026-10-20T23:57:25Z — Reversal (E9) and instalments (E10)
+- Reversal: appends an equal and opposite posting with the original's value day, linked to it (new
+  `reversesSequence` field on `Posting`, key `REV|E7`). The original is never edited. Only an accepted CREDIT
+  or DEBIT on the same account, with the same value day, can be reversed, and only once.
+- E9 is booked Day 6, so Day 5 closes first (−205 → fee → −230), then +620 lands on Day 2. The three fees
+  are kept (the brief has no refund rule), so ACC-001 ends at 390.00, not 465.00: criterion 6 is wrong.
+  Auth-B stays declined; decisions are not revisited.
+- Instalments: split in whole fils, 10,000 ÷ 3 = 3,333 remainder 1, extra fil to the first child →
+  3.334, 3.333, 3.333 = exactly 10.000. Three × 3.334 = 10.002, so criterion 7 is wrong. All children are
+  checked before any is posted; the parent event is not itself a posting.
+- E10 arrives after E9, so it is processed on Day 6 (the clock never goes back) but counts for Day 5:
+  the original Day 5 BHD close stays 0.000, restated Day 5 is 10.000.
+- All ten fixture events now replay; `finish()` closes Day 6 positive at 390.00.
+- New tests: `ReversalTest` (5) and `InstalmentTest` (5). `mvn test` → 58 passed.
+- Checked the tests catch a real bug: gave the leftover fil to the last child instead of the first →
+  2 failures; restored.
+- Next: interest and capitalization.

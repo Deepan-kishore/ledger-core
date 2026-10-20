@@ -119,7 +119,7 @@ class PostingAndBalanceTest {
         List<LedgerRecord> log = new ArrayList<>(engine.records());
         Map<String, Account> accounts = Map.of(ACC_AED, Fixture.accounts().get(0));
         LedgerView view = new LedgerView(accounts, log);
-        log.add(new Posting(log.size() + 1, 1, ACC_AED, PostingType.EXTERNAL_CREDIT, aed("1000.00"), 1, "X", null, "X"));
+        log.add(new Posting(log.size() + 1, 1, ACC_AED, PostingType.EXTERNAL_CREDIT, aed("1000.00"), 1, "X", null, null, "X"));
         assertEquals(aed("1200.00"), view.balance(ACC_AED, 1, Long.MAX_VALUE), "the view copied the list");
     }
 

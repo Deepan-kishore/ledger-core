@@ -4,8 +4,8 @@ A small, runnable bank-ledger engine. It replays a fixed 10-event fixture over s
 accounts, charges overdraft fees, handles card-style holds, reverses a backdated debit, splits a credit
 into instalments, and capitalizes interest.
 
-> **Status: day close and overdraft fees.** Money, input, the append-only record log, credits/debits, holds,
-> settlement, day closes and overdraft fees are written and tested. Reversals, instalments, interest and
+> **Status: all ten events replay.** Money, input, the append-only record log, credits/debits, holds,
+> settlement, day closes, overdraft fees, reversals and instalments are written and tested. Interest and
 > the report are not written yet.
 > This README grows with the code.
 
@@ -28,7 +28,7 @@ into instalments, and capitalizes interest.
 ## Commands (from a clean checkout)
 
 ```bash
-mvn test       # compiles and runs the test suite (48 tests so far)
+mvn test       # compiles and runs the test suite (58 tests so far)
 mvn package    # runs the suite again and builds target/in-memory-ledger-1.0.0.jar
 ```
 
@@ -45,6 +45,10 @@ overdraft fee                   AED 25.00, at most once per account per day whos
 Days close when an event for a later day arrives (`finish()` closes the rest). When a backdated posting
 lands on an already-closed day, closed days are re-checked from that day onwards, oldest first, so a fee
 on an earlier day counts towards the later ones. The open day is only charged when it closes.
+
+A reversal appends an equal and opposite posting with the original's value day, linked to it; the
+original is never edited, and fees it caused are kept. An instalment credit is split in whole minor units,
+the earliest children taking any leftover unit (BHD 10.000 / 3 = 3.334, 3.333, 3.333).
 
 Every record in the log gets the next sequence number. The *cutoff* says "as known up to record N", which
 a day number alone cannot express when several things happen on one day.
