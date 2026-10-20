@@ -4,14 +4,15 @@ A small, runnable bank-ledger engine. It replays a fixed 10-event fixture over s
 accounts, charges overdraft fees, handles card-style holds, reverses a backdated debit, splits a credit
 into instalments, and capitalizes interest.
 
-> **Status: money types.** `ledger.money` (currencies and exact amounts) is written and tested; the
-> fixture, engine and report are not written yet. This README grows with the code.
+> **Status: money types and input.** `ledger.money` and `ledger.input` (accounts, events, the 10-event
+> fixture) are written and tested; the engine and report are not written yet. This README grows with the code.
 
 ## Package layout
 
 | Package | Holds |
 |---|---|
 | `ledger.money` | `CurrencyCode` (AED 2 decimals, BHD 3) and `Money` (exact, scale-checked amounts) |
+| `ledger.input` | `Account`, `EventKind`, `SourceEvent` (one event as supplied) and `Fixture` (the brief's E1–E10, in order) |
 
 ## Prerequisites
 
@@ -23,6 +24,6 @@ into instalments, and capitalizes interest.
 ## Commands (from a clean checkout)
 
 ```bash
-mvn test       # compiles and runs the test suite (6 tests so far)
+mvn test       # compiles and runs the test suite (11 tests so far)
 mvn package    # runs the suite again and builds target/in-memory-ledger-1.0.0.jar
 ```
