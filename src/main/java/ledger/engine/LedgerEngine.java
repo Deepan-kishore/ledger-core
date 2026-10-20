@@ -14,6 +14,7 @@ import ledger.input.EventKind;
 import ledger.input.SourceEvent;
 import ledger.money.CurrencyCode;
 import ledger.money.Money;
+import ledger.record.AuthorizationFact;
 import ledger.record.ErrorCode;
 import ledger.record.LedgerRecord;
 import ledger.record.Outcome;
@@ -146,9 +147,80 @@ public final class LedgerEngine {
     private Applied apply(SourceEvent e) {
         return switch (e.kind()) {
             case CREDIT, DEBIT -> applyCreditOrDebit(e);
-            case AUTHORIZATION, SETTLEMENT, REVERSAL, INSTALMENT_CREDIT ->
+            case AUTHORIZATION -> applyAuthorization(e);
+            case SETTLEMENT -> applySettlement(e);
+            case REVERSAL, INSTALMENT_CREDIT ->
                     throw new UnsupportedOperationException(e.kind() + " is not implemented yet");
         };
+    }
+
+    /**
+     * Approves a hold only if ledger - active holds - requested hold >= 0, using everything known now.
+     * Either way an AuthorizationFact records the decision and the numbers it was based on.
+     */
+    private Applied applyAuthorization(SourceEvent e) {
+        Account account = requireAccount(e);
+        Money hold = parsePositiveAmount(account, e.currencyText(), e.amountText());
+        requireValueDay(e);
+        String authId = requireAuthorizationId(e);
+        if (liveView().latestAuthorizationFact(authId, lastSequence()).isPresent()) {
+            throw new DomainException(ErrorCode.DUPLICATE_AUTHORIZATION_ID, "Authorization " + authId + " already exists");
+        }
+        // --- validation complete
+        LedgerView view = liveView();
+        Money ledger = view.balance(account.id(), watermark, lastSequence());
+        Money activeHolds = view.activeHolds(account.id(), watermark, lastSequence());
+        Money remaining = ledger.minus(activeHolds).minus(hold);
+        boolean approved = remaining.signum() >= 0;
+        AuthorizationFact fact = append(new AuthorizationFact(nextSequence(), watermark, authId, account.id(),
+                e.sourceId(), approved ? AuthorizationFact.Kind.APPROVED : AuthorizationFact.Kind.DECLINED,
+                hold, ledger, activeHolds, null));
+        String evidence = "ledger " + ledger.plain() + " - active holds " + activeHolds.plain() + " - requested "
+                + hold.plain() + " = " + remaining.plain();
+        if (approved) {
+            return new Applied(Outcome.Status.ACCEPTED, null,
+                    authId + " APPROVED, hold " + hold + " (" + evidence + " >= 0)", List.of(fact.sequence()));
+        }
+        return new Applied(Outcome.Status.DECLINED, ErrorCode.INSUFFICIENT_AVAILABLE_FUNDS,
+                authId + " DECLINED, no hold created (" + evidence + " < 0)", List.of(fact.sequence()));
+    }
+
+    /**
+     * One final capture against an approved, still-active authorization on the same account. Debits the
+     * captured amount and releases the full hold in the same step. The new-authorization solvency rule is
+     * deliberately not applied again: the hold already reserved the money.
+     */
+    private Applied applySettlement(SourceEvent e) {
+        Account account = requireAccount(e);
+        Money capture = parsePositiveAmount(account, e.currencyText(), e.amountText());
+        requireValueDay(e);
+        String authId = requireAuthorizationId(e);
+        AuthorizationFact latest = liveView().latestAuthorizationFact(authId, lastSequence())
+                .orElseThrow(() -> new DomainException(ErrorCode.UNKNOWN_AUTHORIZATION,
+                        "No authorization " + authId + " exists; settlement refused, no funds moved"));
+        if (!latest.accountId().equals(account.id())) {
+            throw new DomainException(ErrorCode.AUTHORIZATION_ACCOUNT_MISMATCH,
+                    authId + " belongs to " + latest.accountId() + ", not " + account.id());
+        }
+        switch (latest.kind()) {
+            case DECLINED -> throw new DomainException(ErrorCode.AUTHORIZATION_DECLINED,
+                    authId + " was declined; there is no hold to capture");
+            case SETTLED -> throw new DomainException(ErrorCode.AUTHORIZATION_ALREADY_SETTLED,
+                    authId + " was already settled (single final capture only)");
+            case APPROVED -> { }
+        }
+        if (capture.compareTo(latest.hold()) > 0) {
+            throw new DomainException(ErrorCode.CAPTURE_EXCEEDS_HOLD,
+                    "Capture " + capture + " exceeds hold " + latest.hold());
+        }
+        // --- validation complete
+        Posting debit = append(new Posting(nextSequence(), watermark, account.id(), PostingType.SETTLEMENT_DEBIT,
+                capture.negate(), e.valueDay(), e.sourceId(), e.sourceId() + " capture " + authId));
+        AuthorizationFact settled = append(new AuthorizationFact(nextSequence(), watermark, authId, account.id(),
+                e.sourceId(), AuthorizationFact.Kind.SETTLED, latest.hold(), null, null, capture));
+        return new Applied(Outcome.Status.ACCEPTED, null,
+                authId + " settled: debited " + capture + ", released full hold " + latest.hold(),
+                List.of(debit.sequence(), settled.sequence()));
     }
 
     private Applied applyCreditOrDebit(SourceEvent e) {
@@ -181,6 +253,13 @@ public final class LedgerEngine {
             throw new DomainException(ErrorCode.INVALID_VALUE_DAY,
                     "Value day " + e.valueDay() + " must be within Day1..Day" + watermark + " (no future dating)");
         }
+    }
+
+    private static String requireAuthorizationId(SourceEvent e) {
+        if (e.authorizationId() == null || e.authorizationId().isBlank()) {
+            throw new DomainException(ErrorCode.MISSING_AUTHORIZATION_ID, "Authorization id is required");
+        }
+        return e.authorizationId();
     }
 
     /** Validates currency and a strictly positive magnitude at exactly the currency's precision. */
@@ -219,6 +298,10 @@ public final class LedgerEngine {
     }
 
     // ------------------------------------------------------------------ log helpers
+
+    private LedgerView liveView() {
+        return new LedgerView(accounts, records);
+    }
 
     private long nextSequence() {
         return records.size() + 1L;

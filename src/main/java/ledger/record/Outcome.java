@@ -9,6 +9,8 @@ import ledger.input.EventKind;
  *
  * <ul>
  *   <li>ACCEPTED: the event took effect; {@code effectSequences} lists the records it created.</li>
+ *   <li>DECLINED: a valid request the business rule said no to (an authorization with insufficient
+ *       available balance). The decline evidence is itself a record listed in {@code effectSequences}.</li>
  *   <li>REJECTED: invalid or not allowed. No money moved; {@code errorCode} says why.</li>
  * </ul>
  *
@@ -25,7 +27,7 @@ public record Outcome(
         String message,
         List<Long> effectSequences) implements LedgerRecord {
 
-    public enum Status { ACCEPTED, REJECTED }
+    public enum Status { ACCEPTED, DECLINED, REJECTED }
 
     public Outcome {
         Objects.requireNonNull(sourceId, "sourceId");

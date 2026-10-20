@@ -3,8 +3,10 @@ package ledger.engine;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import ledger.input.Account;
 import ledger.money.Money;
+import ledger.record.AuthorizationFact;
 import ledger.record.LedgerRecord;
 import ledger.record.Posting;
 
@@ -52,6 +54,57 @@ public final class LedgerView {
             }
         }
         return total;
+    }
+
+    /**
+     * Sum of holds approved on or before {@code day} and not yet settled by {@code day}, using only facts
+     * known by the cutoff. Holds follow the day they were recorded, not a value day: a hold cannot be
+     * backdated.
+     */
+    public Money activeHolds(String accountId, int day, long cutoff) {
+        Money total = Money.zero(account(accountId).currency());
+        for (LedgerRecord r : records) {
+            if (r.sequence() > cutoff) {
+                break;
+            }
+            if (r instanceof AuthorizationFact f && f.accountId().equals(accountId) && f.recordedDay() <= day) {
+                if (f.kind() == AuthorizationFact.Kind.APPROVED) {
+                    total = total.plus(f.hold());
+                } else if (f.kind() == AuthorizationFact.Kind.SETTLED) {
+                    total = total.minus(f.hold());
+                }
+            }
+        }
+        return total;
+    }
+
+    /** Available balance = ledger balance minus active holds. */
+    public Money available(String accountId, int day, long cutoff) {
+        return balance(accountId, day, cutoff).minus(activeHolds(accountId, day, cutoff));
+    }
+
+    /** Latest fact for an authorization id known by the cutoff (APPROVED, DECLINED or SETTLED). */
+    public Optional<AuthorizationFact> latestAuthorizationFact(String authorizationId, long cutoff) {
+        AuthorizationFact latest = null;
+        for (LedgerRecord r : records) {
+            if (r.sequence() > cutoff) {
+                break;
+            }
+            if (r instanceof AuthorizationFact f && f.authorizationId().equals(authorizationId)) {
+                latest = f;
+            }
+        }
+        return Optional.ofNullable(latest);
+    }
+
+    public <T extends LedgerRecord> List<T> recordsOf(Class<T> type) {
+        List<T> out = new ArrayList<>();
+        for (LedgerRecord r : records) {
+            if (type.isInstance(r)) {
+                out.add(type.cast(r));
+            }
+        }
+        return List.copyOf(out);
     }
 
     public List<Posting> postings() {

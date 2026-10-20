@@ -47,3 +47,18 @@ All times are UTC, taken with `date -u` while working.
 - Tests: `PostingAndBalanceTest` (Day 1 = 250.00; a debit dated back to Day 2 gives Day 2 = −370.00 and
   Day 3 = 30.00; cutoffs; append-only) and `InputValidationTest`. `mvn test` → 22 passed.
 - Next: authorizations and settlement (Auth-A, Auth-Z, Auth-B).
+
+## 2026-10-20T23:09:29Z — Authorizations and settlement
+- `AuthorizationFact` record (APPROVED / DECLINED / SETTLED) with the numbers the decision used. A hold is
+  not a posting: it lowers available balance, never the ledger balance. New outcome status DECLINED (a valid
+  request the rule said no to), separate from REJECTED (invalid input).
+- Authorization: approved iff ledger − active holds − requested ≥ 0, using everything known at that moment.
+  Auth-A: 250 − 0 − 200 = 50 → approved. Auth-B: ledger −155 (E7 already posted) → declined. Fees are not
+  in the engine yet, so Auth-B's evidence will change once they are.
+- Settlement: one final capture against an approved, active authorization on the same account; capture ≤
+  hold; debit the captured 185.00 and release the whole 200.00 hold (the 15.00 was only reserved, so no
+  refund posting). The new-hold rule is not re-applied to a capture. E6 (Auth-Z, no authorization) →
+  REJECTED UNKNOWN_AUTHORIZATION, no money moves (criterion 4).
+- Tests: `AuthorizationTest` (7) and `SettlementTest` (6). `mvn test` → 35 passed.
+- Checked the tests catch a real bug: changed the approval rule from `>= 0` to `> 0` → 3 failures; restored.
+- Next: day close and overdraft fees, including backdated E7.

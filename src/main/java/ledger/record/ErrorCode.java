@@ -1,6 +1,6 @@
 package ledger.record;
 
-/** Stable, machine-readable reasons why an event was rejected. */
+/** Stable, machine-readable reasons why an event was rejected or declined. */
 public enum ErrorCode {
     // input validation
     MISSING_SOURCE_ID,
@@ -13,6 +13,15 @@ public enum ErrorCode {
     ZERO_AMOUNT,
     INVALID_BOOKED_DAY,
     INVALID_VALUE_DAY,
+    MISSING_AUTHORIZATION_ID,
     // idempotency
-    DUPLICATE_SOURCE_CONFLICT
+    DUPLICATE_SOURCE_CONFLICT,
+    // authorization / settlement
+    DUPLICATE_AUTHORIZATION_ID,
+    INSUFFICIENT_AVAILABLE_FUNDS,
+    UNKNOWN_AUTHORIZATION,
+    AUTHORIZATION_DECLINED,
+    AUTHORIZATION_ALREADY_SETTLED,
+    AUTHORIZATION_ACCOUNT_MISMATCH,
+    CAPTURE_EXCEEDS_HOLD
 }

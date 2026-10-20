@@ -4,8 +4,9 @@ A small, runnable bank-ledger engine. It replays a fixed 10-event fixture over s
 accounts, charges overdraft fees, handles card-style holds, reverses a backdated debit, splits a credit
 into instalments, and capitalizes interest.
 
-> **Status: postings and balances.** Money, input, the append-only record log and credit/debit handling are
-> written and tested. Holds, fees, reversals, instalments, interest and the report are not written yet.
+> **Status: authorizations and settlement.** Money, input, the append-only record log, credits/debits, holds
+> and settlement are written and tested. Fees, reversals, instalments, interest and the report are not
+> written yet.
 > This README grows with the code.
 
 ## Package layout
@@ -14,8 +15,8 @@ into instalments, and capitalizes interest.
 |---|---|
 | `ledger.money` | `CurrencyCode` (AED 2 decimals, BHD 3) and `Money` (exact, scale-checked amounts) |
 | `ledger.input` | `Account`, `EventKind`, `SourceEvent` (one event as supplied) and `Fixture` (the brief's E1–E10, in order) |
-| `ledger.record` | the append-only records: `LedgerRecord`, `Posting`/`PostingType`, `Outcome`, `ErrorCode` |
-| `ledger.engine` | `LedgerEngine` (validates events and appends records) and `LedgerView` (balances computed from the log) |
+| `ledger.record` | the append-only records: `LedgerRecord`, `Posting`/`PostingType`, `AuthorizationFact`, `Outcome`, `ErrorCode` |
+| `ledger.engine` | `LedgerEngine` (validates events and appends records) and `LedgerView` (balances, holds and available balance computed from the log) |
 
 ## Prerequisites
 
@@ -27,14 +28,16 @@ into instalments, and capitalizes interest.
 ## Commands (from a clean checkout)
 
 ```bash
-mvn test       # compiles and runs the test suite (22 tests so far)
+mvn test       # compiles and runs the test suite (35 tests so far)
 mvn package    # runs the suite again and builds target/in-memory-ledger-1.0.0.jar
 ```
 
 ## Balance formula
 
 ```
-balance(account, day, cutoff) = opening + sum of postings where valueDay <= day and sequence <= cutoff
+balance(account, day, cutoff)   = opening + sum of postings where valueDay <= day and sequence <= cutoff
+available(account, day, cutoff) = balance(...) - active holds
+approve a new hold              iff  ledger - active holds - requested hold >= 0
 ```
 
 Every record in the log gets the next sequence number. The *cutoff* says "as known up to record N", which
