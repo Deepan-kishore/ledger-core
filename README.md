@@ -4,8 +4,9 @@ A small, runnable bank-ledger engine. It replays a fixed 10-event fixture over s
 accounts, charges overdraft fees, handles card-style holds, reverses a backdated debit, splits a credit
 into instalments, and capitalizes interest.
 
-> **Status: money types and input.** `ledger.money` and `ledger.input` (accounts, events, the 10-event
-> fixture) are written and tested; the engine and report are not written yet. This README grows with the code.
+> **Status: postings and balances.** Money, input, the append-only record log and credit/debit handling are
+> written and tested. Holds, fees, reversals, instalments, interest and the report are not written yet.
+> This README grows with the code.
 
 ## Package layout
 
@@ -13,6 +14,8 @@ into instalments, and capitalizes interest.
 |---|---|
 | `ledger.money` | `CurrencyCode` (AED 2 decimals, BHD 3) and `Money` (exact, scale-checked amounts) |
 | `ledger.input` | `Account`, `EventKind`, `SourceEvent` (one event as supplied) and `Fixture` (the brief's E1–E10, in order) |
+| `ledger.record` | the append-only records: `LedgerRecord`, `Posting`/`PostingType`, `Outcome`, `ErrorCode` |
+| `ledger.engine` | `LedgerEngine` (validates events and appends records) and `LedgerView` (balances computed from the log) |
 
 ## Prerequisites
 
@@ -24,6 +27,15 @@ into instalments, and capitalizes interest.
 ## Commands (from a clean checkout)
 
 ```bash
-mvn test       # compiles and runs the test suite (11 tests so far)
+mvn test       # compiles and runs the test suite (22 tests so far)
 mvn package    # runs the suite again and builds target/in-memory-ledger-1.0.0.jar
 ```
+
+## Balance formula
+
+```
+balance(account, day, cutoff) = opening + sum of postings where valueDay <= day and sequence <= cutoff
+```
+
+Every record in the log gets the next sequence number. The *cutoff* says "as known up to record N", which
+a day number alone cannot express when several things happen on one day.

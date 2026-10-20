@@ -1,0 +1,66 @@
+package ledger.engine;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import ledger.input.Account;
+import ledger.money.Money;
+import ledger.record.LedgerRecord;
+import ledger.record.Posting;
+
+/**
+ * A read-only projection computed by scanning the record log. It never appends anything, so it can
+ * be rebuilt from {@link LedgerEngine#records()} at any time and must give the same answers.
+ *
+ * <p>Core formula:
+ * <pre>
+ * balance(account, effectiveDay, cutoff) =
+ *     opening + sum(posting.amount where posting.valueDay &lt;= effectiveDay
+ *                                    and posting.sequence &lt;= cutoff)
+ * </pre>
+ * Each query is a full scan: O(records). With 6 days and a few dozen records that is tiny, and it
+ * keeps the logic obviously correct. A production system would index by account and value day.
+ */
+public final class LedgerView {
+
+    private final Map<String, Account> accounts;
+    private final List<LedgerRecord> records;
+
+    /** Copies both arguments, so later changes to the caller's collections never change this view. */
+    public LedgerView(Map<String, Account> accounts, List<LedgerRecord> records) {
+        this.accounts = Map.copyOf(accounts);
+        this.records = List.copyOf(records);
+    }
+
+    public Account account(String accountId) {
+        Account a = accounts.get(accountId);
+        if (a == null) {
+            throw new IllegalArgumentException("Unknown account " + accountId);
+        }
+        return a;
+    }
+
+    /** Ledger balance: opening plus postings effective on or before the day and known by the cutoff. */
+    public Money balance(String accountId, int effectiveDay, long cutoff) {
+        Money total = account(accountId).opening();
+        for (LedgerRecord r : records) {
+            if (r.sequence() > cutoff) {
+                break;
+            }
+            if (r instanceof Posting p && p.accountId().equals(accountId) && p.valueDay() <= effectiveDay) {
+                total = total.plus(p.amount());
+            }
+        }
+        return total;
+    }
+
+    public List<Posting> postings() {
+        List<Posting> out = new ArrayList<>();
+        for (LedgerRecord r : records) {
+            if (r instanceof Posting p) {
+                out.add(p);
+            }
+        }
+        return List.copyOf(out);
+    }
+}

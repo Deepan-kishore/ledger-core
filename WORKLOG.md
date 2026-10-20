@@ -31,3 +31,19 @@ All times are UTC, taken with `date -u` while working.
   instalments"); to note in AMBIGUITIES.md.
 - `FixtureTest`: 5 tests (order, every field, E7/E9 backdated, openings, currency check). `mvn test` → 11 passed.
 - Next: append-only records, postings and balance by value date.
+
+## 2026-10-20T22:39:53Z — Append-only log, postings and balances
+- New package `ledger.record`: `LedgerRecord` (every record has a sequence number and the day it was
+  recorded), `Posting`/`PostingType`, `Outcome` and `ErrorCode`. `ErrorCode` lives here, not in the engine,
+  because `Outcome` stores it; that keeps the dependency one-way (engine → record).
+- New package `ledger.engine`: `LedgerEngine.submit` validates an event and appends records to one list
+  that is never edited; `LedgerView.balance(account, day, cutoff)` sums postings with value day ≤ day and
+  sequence ≤ cutoff. Balances are computed by scanning, not stored (simple and checkable; O(records)).
+- Only CREDIT and DEBIT are handled; the other kinds throw "not implemented yet" until their step.
+- Bad input becomes a REJECTED outcome with an error code and moves no money. Blank source ids are
+  rejected; resubmitting the same event returns the original outcome; reusing an id for a different event
+  is rejected. `LedgerView` copies its inputs so a caller cannot change it afterwards.
+- Engine clock: the latest booked day seen; it never moves back (a late event keeps the later day).
+- Tests: `PostingAndBalanceTest` (Day 1 = 250.00; a debit dated back to Day 2 gives Day 2 = −370.00 and
+  Day 3 = 30.00; cutoffs; append-only) and `InputValidationTest`. `mvn test` → 22 passed.
+- Next: authorizations and settlement (Auth-A, Auth-Z, Auth-B).
