@@ -23,7 +23,7 @@ final class Support {
     }
 
     static LedgerEngine engine() {
-        return new LedgerEngine(Fixture.accounts());
+        return new LedgerEngine(Fixture.accounts(), LedgerEngine.standardFeeTariffs());
     }
 
     /** The fixture replayed through (and including) the given source id. */
@@ -42,7 +42,7 @@ final class Support {
     static LedgerEngine engineWithExtraAccount() {
         List<Account> accounts = new ArrayList<>(Fixture.accounts());
         accounts.add(new Account("ACC-003", CurrencyCode.AED, aed("0.00")));
-        return new LedgerEngine(accounts);
+        return new LedgerEngine(accounts, LedgerEngine.standardFeeTariffs());
     }
 
     /** An engine with one AED credit on Day 1. */

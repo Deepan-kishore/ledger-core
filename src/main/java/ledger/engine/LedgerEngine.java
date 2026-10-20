@@ -4,10 +4,13 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import ledger.input.Account;
 import ledger.input.EventKind;
@@ -15,7 +18,9 @@ import ledger.input.SourceEvent;
 import ledger.money.CurrencyCode;
 import ledger.money.Money;
 import ledger.record.AuthorizationFact;
+import ledger.record.DayClose;
 import ledger.record.ErrorCode;
+import ledger.record.FeePolicyError;
 import ledger.record.LedgerRecord;
 import ledger.record.Outcome;
 import ledger.record.Posting;
@@ -28,7 +33,13 @@ import ledger.record.PostingType;
  * changed or removed. Balances are computed from that list by {@link LedgerView}.
  *
  * <p>The clock: each event has a booked day. The engine keeps a "watermark" — the latest booked day
- * seen — that only moves forward. A late event (booked earlier than the watermark) does not move it back.
+ * seen — that only moves forward. When an event with a later booked day arrives, every earlier unclosed
+ * day is closed first (fee assessed, original snapshot frozen). A late event (booked earlier than the
+ * watermark) does not move it back. Day 6 is closed only by {@link #finish}.
+ *
+ * <p>Backdated money: when a posting's value day is an already-closed day, those closed days are
+ * re-checked in order, oldest first, so a fee on Day 2 lowers Day 3 and Day 4 before they are checked.
+ * One fee key per account and day prevents a second fee for the same day.
  *
  * <p>Not thread-safe by design: one ordered writer only.
  */
@@ -38,15 +49,25 @@ public final class LedgerEngine {
     public static final int LAST_DAY = 6;
 
     private final Map<String, Account> accounts;
+    private final Map<CurrencyCode, Money> feeTariffs;
 
     private final List<LedgerRecord> records = new ArrayList<>();
     private final List<SourceEvent> inputLog = new ArrayList<>();
     private final Map<String, SourceEvent> sourcesById = new HashMap<>();
     private final Map<String, Outcome> outcomesById = new HashMap<>();
+    private final Set<String> feeKeys = new HashSet<>();
+    private final Set<String> missingFeePolicyKeys = new HashSet<>();
+    private final Map<String, Long> checkpoints = new LinkedHashMap<>();
 
     private int watermark = FIRST_DAY;
+    private int lastClosedDay = FIRST_DAY - 1;
+    private boolean finalized;
 
-    public LedgerEngine(List<Account> accounts) {
+    /**
+     * @param accounts   accounts with their opening balances
+     * @param feeTariffs overdraft fee per currency; a currency without an entry gives MISSING_FEE_POLICY
+     */
+    public LedgerEngine(List<Account> accounts, Map<CurrencyCode, Money> feeTariffs) {
         Map<String, Account> byId = new TreeMap<>();
         for (Account a : accounts) {
             if (byId.put(a.id(), a) != null) {
@@ -54,6 +75,17 @@ public final class LedgerEngine {
             }
         }
         this.accounts = Collections.unmodifiableMap(byId);
+        feeTariffs.forEach((ccy, fee) -> {
+            if (fee.currency() != ccy || fee.signum() <= 0) {
+                throw new IllegalArgumentException("Invalid tariff " + fee + " for " + ccy);
+            }
+        });
+        this.feeTariffs = Map.copyOf(feeTariffs);
+    }
+
+    /** The brief's tariff: AED 25.00 only. No BHD tariff is invented. */
+    public static Map<CurrencyCode, Money> standardFeeTariffs() {
+        return Map.of(CurrencyCode.AED, Money.of(CurrencyCode.AED, "25.00"));
     }
 
     // ------------------------------------------------------------------ public API
@@ -84,11 +116,15 @@ public final class LedgerEngine {
         sourcesById.put(event.sourceId(), event);
 
         Outcome outcome;
-        if (event.bookedDay() < FIRST_DAY || event.bookedDay() > LAST_DAY) {
+        if (finalized) {
+            outcome = appendOutcome(event, inputPosition, Outcome.Status.REJECTED, ErrorCode.WINDOW_FINALIZED,
+                    "Window already finalized", List.of());
+        } else if (event.bookedDay() < FIRST_DAY || event.bookedDay() > LAST_DAY) {
             outcome = appendOutcome(event, inputPosition, Outcome.Status.REJECTED, ErrorCode.INVALID_BOOKED_DAY,
                     "Booked day " + event.bookedDay() + " is outside Day1..Day6", List.of());
         } else {
-            watermark = Math.max(watermark, event.bookedDay());
+            advanceClockTo(event.bookedDay());
+            checkpoints.putIfAbsent("before:" + event.sourceId(), lastSequence());
             int sizeBefore = records.size();
             Applied applied;
             try {
@@ -104,7 +140,20 @@ public final class LedgerEngine {
                     applied.effects);
         }
         outcomesById.put(event.sourceId(), outcome);
+        checkpoints.putIfAbsent("after:" + event.sourceId(), lastSequence());
         return outcome;
+    }
+
+    /** End of input: closes every remaining day including Day 6. Calling it again does nothing. */
+    public void finish() {
+        if (finalized) {
+            return;
+        }
+        for (int d = lastClosedDay + 1; d <= LAST_DAY; d++) {
+            closeDay(d);
+        }
+        watermark = LAST_DAY;
+        finalized = true;
     }
 
     /** Immutable copy of the whole append-only log. */
@@ -137,6 +186,96 @@ public final class LedgerEngine {
 
     public int watermark() {
         return watermark;
+    }
+
+    public int lastClosedDay() {
+        return lastClosedDay;
+    }
+
+    public boolean isFinalized() {
+        return finalized;
+    }
+
+    /**
+     * Named knowledge cutoffs (record sequences): "before:E7", "principal:E7" (after the posting, before
+     * any re-check fee), "after:E7", "close:Day5", ...
+     */
+    public long checkpoint(String name) {
+        Long seq = checkpoints.get(name);
+        if (seq == null) {
+            throw new IllegalArgumentException("No checkpoint " + name);
+        }
+        return seq;
+    }
+
+    public Map<String, Long> checkpoints() {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(checkpoints));
+    }
+
+    // ------------------------------------------------------------------ clock and closes
+
+    private void advanceClockTo(int bookedDay) {
+        if (bookedDay <= watermark) {
+            return; // late or same-day event: the watermark never moves backwards
+        }
+        for (int d = lastClosedDay + 1; d < bookedDay; d++) {
+            closeDay(d);
+        }
+        watermark = bookedDay;
+    }
+
+    /** Assesses each account's fee for the day, then freezes a snapshot of the day as known now. */
+    private void closeDay(int day) {
+        for (Account a : accounts.values()) {
+            assessFee(a.id(), day, day, "close of Day" + day, new ArrayList<>());
+        }
+        long cutoff = lastSequence();
+        LedgerView view = liveView();
+        for (Account a : accounts.values()) {
+            Money ledger = view.balance(a.id(), day, cutoff);
+            Money holds = view.activeHolds(a.id(), day, cutoff);
+            append(new DayClose(nextSequence(), day, a.id(), day, ledger, holds, ledger.minus(holds), cutoff));
+        }
+        checkpoints.put("close:Day" + day, lastSequence());
+        lastClosedDay = day;
+    }
+
+    /**
+     * Charges the overdraft fee for one account and day if that day's closing ledger balance, as known
+     * right now, is negative and no fee exists yet for that account and day. The fee is dated to that day.
+     */
+    private void assessFee(String accountId, int day, int recordedDay, String cause, List<Long> effects) {
+        Account account = accounts.get(accountId);
+        Money close = liveView().balance(accountId, day, lastSequence());
+        if (!close.isNegative()) {
+            return;
+        }
+        String key = "FEE|" + accountId + "|D" + day;
+        Money tariff = feeTariffs.get(account.currency());
+        if (tariff == null) {
+            if (missingFeePolicyKeys.add(key)) {
+                effects.add(append(new FeePolicyError(nextSequence(), recordedDay, accountId, day,
+                        ErrorCode.MISSING_FEE_POLICY, close, cause)).sequence());
+            }
+            return;
+        }
+        if (feeKeys.add(key)) {
+            effects.add(append(new Posting(nextSequence(), recordedDay, accountId, PostingType.OVERDRAFT_FEE,
+                    tariff.negate(), day, null, key, cause)).sequence());
+        }
+    }
+
+    /** After a backdated posting, re-check every already-closed day from its value day, oldest first. */
+    private void reassessClosedDays(String accountId, int fromValueDay, String sourceId, List<Long> effects) {
+        for (int d = fromValueDay; d <= lastClosedDay; d++) {
+            assessFee(accountId, d, watermark, "re-assessment after " + sourceId, effects);
+        }
+    }
+
+    /** Called after an event's money is posted: marks the cutoff, then re-checks closed days. */
+    private void afterPrincipal(SourceEvent e, String accountId, int valueDay, List<Long> effects) {
+        checkpoints.putIfAbsent("principal:" + e.sourceId(), lastSequence());
+        reassessClosedDays(accountId, valueDay, e.sourceId(), effects);
     }
 
     // ------------------------------------------------------------------ event handling
@@ -214,13 +353,14 @@ public final class LedgerEngine {
                     "Capture " + capture + " exceeds hold " + latest.hold());
         }
         // --- validation complete
-        Posting debit = append(new Posting(nextSequence(), watermark, account.id(), PostingType.SETTLEMENT_DEBIT,
-                capture.negate(), e.valueDay(), e.sourceId(), e.sourceId() + " capture " + authId));
-        AuthorizationFact settled = append(new AuthorizationFact(nextSequence(), watermark, authId, account.id(),
-                e.sourceId(), AuthorizationFact.Kind.SETTLED, latest.hold(), null, null, capture));
+        List<Long> effects = new ArrayList<>();
+        effects.add(append(new Posting(nextSequence(), watermark, account.id(), PostingType.SETTLEMENT_DEBIT,
+                capture.negate(), e.valueDay(), e.sourceId(), null, e.sourceId() + " capture " + authId)).sequence());
+        effects.add(append(new AuthorizationFact(nextSequence(), watermark, authId, account.id(),
+                e.sourceId(), AuthorizationFact.Kind.SETTLED, latest.hold(), null, null, capture)).sequence());
+        afterPrincipal(e, account.id(), e.valueDay(), effects);
         return new Applied(Outcome.Status.ACCEPTED, null,
-                authId + " settled: debited " + capture + ", released full hold " + latest.hold(),
-                List.of(debit.sequence(), settled.sequence()));
+                authId + " settled: debited " + capture + ", released full hold " + latest.hold(), effects);
     }
 
     private Applied applyCreditOrDebit(SourceEvent e) {
@@ -229,12 +369,13 @@ public final class LedgerEngine {
         requireValueDay(e);
         // --- validation complete; writes start here
         boolean credit = e.kind() == EventKind.CREDIT;
-        Posting posting = append(new Posting(nextSequence(), watermark, account.id(),
+        List<Long> effects = new ArrayList<>();
+        effects.add(append(new Posting(nextSequence(), watermark, account.id(),
                 credit ? PostingType.EXTERNAL_CREDIT : PostingType.EXTERNAL_DEBIT,
-                credit ? magnitude : magnitude.negate(), e.valueDay(), e.sourceId(), e.sourceId()));
+                credit ? magnitude : magnitude.negate(), e.valueDay(), e.sourceId(), null, e.sourceId())).sequence());
+        afterPrincipal(e, account.id(), e.valueDay(), effects);
         return new Applied(Outcome.Status.ACCEPTED, null,
-                (credit ? "credited " : "debited ") + magnitude + " value Day" + e.valueDay(),
-                List.of(posting.sequence()));
+                (credit ? "credited " : "debited ") + magnitude + " value Day" + e.valueDay(), effects);
     }
 
     // ------------------------------------------------------------------ validation helpers

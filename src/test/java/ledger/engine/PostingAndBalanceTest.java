@@ -28,7 +28,7 @@ class PostingAndBalanceTest {
     }
 
     private static LedgerEngine engine() {
-        return new LedgerEngine(Fixture.accounts());
+        return new LedgerEngine(Fixture.accounts(), LedgerEngine.standardFeeTariffs());
     }
 
     private static Money now(LedgerEngine engine, String account, int day) {
@@ -61,8 +61,10 @@ class PostingAndBalanceTest {
         // Like E7: booked Day 5, value-dated back to Day 2.
         engine.submit(SourceEvent.debit("E7", 5, ACC_AED, "AED", "620.00", 2));
         assertEquals(aed("250.00"), now(engine, ACC_AED, 1), "Day 1 is before the value day");
-        assertEquals(aed("-370.00"), now(engine, ACC_AED, 2), "250 - 620");
-        assertEquals(aed("30.00"), now(engine, ACC_AED, 3), "-370 + 400");
+        assertEquals(aed("-370.00"), engine.view().balance(ACC_AED, 2, engine.checkpoint("principal:E7")),
+                "250 - 620, before the fee E7 causes");
+        assertEquals(aed("-395.00"), now(engine, ACC_AED, 2), "Day 2 went negative, so it gets a 25.00 fee");
+        assertEquals(aed("5.00"), now(engine, ACC_AED, 3), "-395 + 400: the Day 2 fee counts on Day 3");
 
         Posting e7 = engine.view().postings().get(3);
         assertEquals(2, e7.valueDay(), "counts towards Day 2");
@@ -79,7 +81,9 @@ class PostingAndBalanceTest {
 
         LedgerView view = engine.view();
         assertEquals(aed("250.00"), view.balance(ACC_AED, 2, beforeBackdatedDebit), "Day 2 as known before E7");
-        assertEquals(aed("-370.00"), view.balance(ACC_AED, 2, engine.lastSequence()), "Day 2 as known after E7");
+        assertEquals(aed("-370.00"), view.balance(ACC_AED, 2, engine.checkpoint("principal:E7")),
+                "Day 2 right after E7's debit, before any fee");
+        assertEquals(aed("-395.00"), view.balance(ACC_AED, 2, engine.lastSequence()), "Day 2 after E7's fee");
     }
 
     @Test
@@ -115,7 +119,7 @@ class PostingAndBalanceTest {
         List<LedgerRecord> log = new ArrayList<>(engine.records());
         Map<String, Account> accounts = Map.of(ACC_AED, Fixture.accounts().get(0));
         LedgerView view = new LedgerView(accounts, log);
-        log.add(new Posting(log.size() + 1, 1, ACC_AED, PostingType.EXTERNAL_CREDIT, aed("1000.00"), 1, "X", "X"));
+        log.add(new Posting(log.size() + 1, 1, ACC_AED, PostingType.EXTERNAL_CREDIT, aed("1000.00"), 1, "X", null, "X"));
         assertEquals(aed("1200.00"), view.balance(ACC_AED, 1, Long.MAX_VALUE), "the view copied the list");
     }
 

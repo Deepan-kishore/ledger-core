@@ -62,3 +62,24 @@ All times are UTC, taken with `date -u` while working.
 - Tests: `AuthorizationTest` (7) and `SettlementTest` (6). `mvn test` → 35 passed.
 - Checked the tests catch a real bug: changed the approval rule from `>= 0` to `> 0` → 3 failures; restored.
 - Next: day close and overdraft fees, including backdated E7.
+
+## 2026-10-20T23:38:55Z — Day close and overdraft fees
+- Days close when an event for a later booked day arrives; `finish()` closes the rest at end of input. The
+  brief gives no clock, only booked days. Each close assesses the fee, then saves a `DayClose` snapshot
+  (balance, holds, available as known then) that is never edited.
+- Fee: AED 25.00 when a day's closing balance (value date ≤ that day) is negative, dated to that day. At
+  most one per account per day, guaranteed by a key such as `FEE|ACC-001|D2` (new `key` field on `Posting`).
+- When a backdated posting lands on a closed day, closed days are re-checked from that day on, oldest
+  first. A fee is a normal posting dated to its day, so it counts towards later days. The open day is only
+  charged at its close, so a balance that dips and recovers during the day pays nothing.
+- E7 now immediately causes fees for Day 2 (−370 → −395) and Day 4 (5 − 185 = −180 → −205); Day 3 stays at
+  +5 and escapes. Day 5 is charged at its close (−205 → −230). Three fees, not one: criterion 2 is wrong.
+- Named checkpoints (`before:`, `principal:`, `after:`, `close:DayN`): `principal:E7` is the moment after
+  E7's debit and before its fees, which is where criterion 1's −370.00 lives.
+- No BHD tariff is given, so a negative BHD close records `MISSING_FEE_POLICY` instead of inventing a fee.
+- Two earlier tests changed because the behaviour changed: Day 2 after E7 is now −395 (−370 is checked at
+  `principal:E7`), and Auth-B is now declined at −205 instead of −155, because the Day 2 and Day 4 fees
+  already exist when E8 arrives.
+- New tests: `OverdraftFeeTest` (8) and `DayCloseTest` (5). `mvn test` → 48 passed.
+- Checked the tests catch a real bug: switched off the closed-day re-checks → 10 failures; restored.
+- Next: reversal (E9) and instalments (E10).

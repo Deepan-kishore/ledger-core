@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
 class InputValidationTest {
 
     private static LedgerEngine engine() {
-        return new LedgerEngine(Fixture.accounts());
+        return new LedgerEngine(Fixture.accounts(), LedgerEngine.standardFeeTariffs());
     }
 
     @Test

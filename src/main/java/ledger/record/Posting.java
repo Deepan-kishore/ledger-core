@@ -12,8 +12,9 @@ import ledger.money.Money;
  *   <li>{@code recordedDay}: when the engine actually wrote it (E7 is recorded Day 5).</li>
  * </ul>
  *
- * @param sourceId the source event that caused it
- * @param cause    human-readable reason, e.g. the source id
+ * @param sourceId the source event that caused it, or null for engine-generated postings (fees)
+ * @param key      unique business key for engine-generated postings ("FEE|ACC-001|D2"); null otherwise
+ * @param cause    human-readable reason: which event or close produced this posting
  */
 public record Posting(
         long sequence,
@@ -23,6 +24,7 @@ public record Posting(
         Money amount,
         int valueDay,
         String sourceId,
+        String key,
         String cause) implements LedgerRecord {
 
     public Posting {

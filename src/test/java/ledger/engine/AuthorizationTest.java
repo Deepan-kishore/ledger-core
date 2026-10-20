@@ -37,9 +37,9 @@ class AuthorizationTest {
         assertEquals(ErrorCode.INSUFFICIENT_AVAILABLE_FUNDS, o.errorCode());
         AuthorizationFact fact = engine.view().latestAuthorizationFact("Auth-B", engine.lastSequence()).orElseThrow();
         assertEquals(AuthorizationFact.Kind.DECLINED, fact.kind());
-        // E7 (value Day 2) is already posted when E8 arrives: 1200 - 950 + 400 - 185 - 620 = -155.
-        // Overdraft fees are not implemented at this stage, so none are included yet.
-        assertEquals(aed("-155.00"), fact.ledgerAtDecision());
+        // When E8 arrives, E7 (value Day 2) is posted and has already caused the Day 2 and Day 4 fees:
+        // 1200 - 950 + 400 - 185 - 620 = -155, minus 2 x 25.00 = -205.
+        assertEquals(aed("-205.00"), fact.ledgerAtDecision());
         assertEquals(aed("0.00"), fact.activeHoldsAtDecision(), "Auth-A was already released by E5");
         assertEquals(aed("0.00"), holdsNow(engine, A, 5), "a declined authorization creates no hold");
     }

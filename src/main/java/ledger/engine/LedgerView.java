@@ -9,6 +9,7 @@ import ledger.money.Money;
 import ledger.record.AuthorizationFact;
 import ledger.record.LedgerRecord;
 import ledger.record.Posting;
+import ledger.record.PostingType;
 
 /**
  * A read-only projection computed by scanning the record log. It never appends anything, so it can
@@ -115,5 +116,24 @@ public final class LedgerView {
             }
         }
         return List.copyOf(out);
+    }
+
+    public List<Posting> postings(String accountId, PostingType type) {
+        List<Posting> out = new ArrayList<>();
+        for (Posting p : postings()) {
+            if (p.accountId().equals(accountId) && p.type() == type) {
+                out.add(p);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** Sum of one posting type for an account (e.g. total overdraft fees, which are negative). */
+    public Money total(String accountId, PostingType type) {
+        Money total = Money.zero(account(accountId).currency());
+        for (Posting p : postings(accountId, type)) {
+            total = total.plus(p.amount());
+        }
+        return total;
     }
 }
