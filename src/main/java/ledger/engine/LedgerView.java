@@ -21,8 +21,14 @@ import ledger.record.PostingType;
  *     opening + sum(posting.amount where posting.valueDay &lt;= effectiveDay
  *                                    and posting.sequence &lt;= cutoff)
  * </pre>
- * Each query is a full scan: O(records). With 6 days and a few dozen records that is tiny, and it
- * keeps the logic obviously correct. A production system would index by account and value day.
+ * How much is scanned depends on how the view was built:
+ * <ul>
+ *   <li>The engine's own view uses its per-account index, so balances and holds scan only that account's
+ *       postings and authorization facts: O(records of one account).</li>
+ *   <li>A view built from a plain list (the public constructor, or {@link LedgerEngine#view()}) has no
+ *       index and scans the whole log: O(records). Fine for a report or a rebuild check.</li>
+ * </ul>
+ * Either way the answers are the same; the index only changes how many records are read.
  */
 public final class LedgerView {
 

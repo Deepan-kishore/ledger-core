@@ -225,3 +225,21 @@ All times are UTC, taken with `date -u` while working.
   `perf/index-on-write`, not merged: the brief needs ten events, and the index is the change the architecture
   document proposes, not a requirement.
 - `bench/README.md` has the commands and the results table; raw rows in `bench/results.csv`.
+
+## 2026-10-21T05:08:32Z — Index branch reviewed and merged into main
+- Changed my mind on keeping `perf/index-on-write` separate (entry above said "not merged"): reviewed it
+  and merged it, so the code on `main` matches the scaling numbers the architecture document reports.
+- Review of `e8f149e` (46 lines in `LedgerEngine` and `LedgerView`): the public `view()` still copies the log
+  and has no index, so callers still get a frozen snapshot; only the engine's internal view reads the live
+  log and the per-account lists. Each index is filled in `append()` in sequence order, so "stop at the
+  cutoff" still works, and each matches what the old scan returned (latest fact per authorization id, first
+  credit/debit posting per source id).
+- Checks, run on `main` and the branch side by side: `mvn test` 84 passed on both; the challenge fails the
+  same way on both (AED 50.00 vs 75.00); default, `--detail` and `--trace` output byte-identical. 200
+  seeded random streams (three accounts, all event kinds, late events, bad input, 34 accepted reversals,
+  27 settlements, 1,430 fees) produced identical records and checkpoints on both. Scale probe at 10,000
+  events: 5.0 s before, 0.047 s after.
+- Merged as a fast-forward (no merge commit); `mvn test` on the merged `main` → 84 passed.
+- Updated the docs that still described a full scan: the `LedgerView` class comment and `bench/README.md`.
+- Also fixed a misquote found while re-reading the docs: AMBIGUITIES §17 now quotes the brief exactly,
+  "Daily interest: 0.04% per day".

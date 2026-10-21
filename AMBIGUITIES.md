@@ -160,7 +160,7 @@ fees after a reversal (§8), settlement without an authorization (§10), interes
   `InterestCalculatorTest.dailyRoundingUsesHalfEvenOnExactHalves`,
   `InterestCalculatorTest.roundingCanAlsoLandBelowTheExactSum`.
 
-## 17. "Daily interest 0.04% per day"
+## 17. "Daily interest: 0.04% per day"
 - **Decision**: 0.0004 per day, not divided by 365: the brief states a daily rate. Positive balances only;
   zero and negative earn nothing.
 - **Tests**: `InterestCalculatorTest.dailyRateIsExactlyOneTwentyFiveHundredth`,
