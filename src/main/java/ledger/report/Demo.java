@@ -108,7 +108,7 @@ public final class Demo {
      */
     static List<String> dailyReport(LedgerEngine engine, boolean detail) {
         LedgerView view = engine.view();
-        long restatedCutoff = engine.checkpoint("before:capitalization");
+        long restatedCutoff = engine.checkpoint("window:before-capitalization");
         Map<String, String> accountOfSource = new HashMap<>();
         for (SourceEvent e : engine.inputLog()) {
             accountOfSource.putIfAbsent(e.sourceId(), e.accountId());

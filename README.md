@@ -30,7 +30,7 @@ Constants and why: [NUMBERS.md](NUMBERS.md). Open questions and how they were de
 ## Commands (from a clean checkout)
 
 ```bash
-mvn test                                      # runs the test suite (81 tests so far)
+mvn test                                      # runs the test suite (84 tests)
 mvn package                                   # runs the suite again and builds the JAR
 java -jar target/in-memory-ledger-1.0.0.jar   # replays the 10 events and prints the per-day report
 java -jar target/in-memory-ledger-1.0.0.jar --detail   # adds restated balances, cutoffs and interest
@@ -127,9 +127,11 @@ replays the fixture twice, identical except for E9's day, and expects the same o
 | Day 5 at its close | −205.00 → fee | +415.00 → no fee |
 | Total fees | **AED 75.00** | **AED 50.00** |
 
-**What it reveals.** A day's fee is decided once, at that day's close, and never revisited, so the charge
-depends on *when* a correction arrives, not only on *what* it corrects. That is the cost of keeping closed
-days frozen. Fixing it would mean basing fees on the final balances and refunding them by new postings
-when a correction turns a day positive, at the price of daily reports that can change after the fact.
+**What it reveals.** A fee is charged as soon as a day is known to be negative, and once charged it is
+never taken back, so the charge depends on *when* a correction arrives, not only on *what* it corrects.
+The cause is the fee rule, not the frozen day snapshots: the brief gives no rule for refunding a fee. A fix
+would append a +25.00 refund posting whenever a correction makes a charged day positive again, leaving the
+original fee and the snapshots untouched; both runs would then net AED 0.00. The cost is a refund rule the
+brief does not give, and customers seeing a fee charged and later refunded.
 Before its final assertion, the test checks that both runs are valid and moved the same money, so it can
 only fail on the design question.

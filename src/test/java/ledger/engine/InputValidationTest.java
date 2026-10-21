@@ -14,7 +14,7 @@ import ledger.record.ErrorCode;
 import ledger.record.Outcome;
 import org.junit.jupiter.api.Test;
 
-/** Bad input is recorded as a REJECTED outcome and never moves money. */
+/** Bad input is recorded as a REJECTED outcome and the rejected event itself posts nothing. */
 class InputValidationTest {
 
     private static LedgerEngine engine() {

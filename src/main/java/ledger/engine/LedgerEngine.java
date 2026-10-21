@@ -164,7 +164,7 @@ public final class LedgerEngine {
         watermark = LAST_DAY;
         assessFees(LAST_DAY);
         long basisCutoff = lastSequence();
-        checkpoints.put("before:capitalization", basisCutoff);
+        checkpoints.put("window:before-capitalization", basisCutoff);
         LedgerView view = liveView();
         for (Account a : accounts.values()) {
             List<Money> closes = new ArrayList<>();
@@ -179,7 +179,7 @@ public final class LedgerEngine {
                         result.capitalized(), LAST_DAY, null, "CAP|" + a.id(), null, "interest capitalization Day1-Day6"));
             }
         }
-        checkpoints.put("after:capitalization", lastSequence());
+        checkpoints.put("window:after-capitalization", lastSequence());
         snapshotCloses(LAST_DAY, true);
         lastClosedDay = LAST_DAY;
         finalized = true;
@@ -226,8 +226,9 @@ public final class LedgerEngine {
     }
 
     /**
-     * Named knowledge cutoffs (record sequences): "before:E7", "principal:E7" (after the posting, before
-     * any re-check fee), "after:E7", "close:Day5", ...
+     * Named knowledge cutoffs (record sequences). Per event: "before:E7", "principal:E7" (after the posting,
+     * before any re-check fee), "after:E7". Per close: "close:Day5". The engine's own end-of-window moments
+     * use a prefix no event can produce: "window:before-capitalization", "window:after-capitalization".
      */
     public long checkpoint(String name) {
         Long seq = checkpoints.get(name);

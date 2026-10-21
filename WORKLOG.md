@@ -184,3 +184,29 @@ All times are UTC, taken with `date -u` while working.
   approaches) and put the accepted criteria last.
 - README: links to the docs, Expected results table, build versions under Prerequisites.
 - Checked every test the docs name exists. `mvn test` → 81 passed.
+
+## 2026-10-21T02:01:10Z — Review fixes: checkpoint collision, clock policy, two wording corrections
+- An external review of the repository (another AI assistant) raised four points; checked each against the
+  code, all four were valid.
+- Checkpoint name collision (real bug): `submit()` names an event's checkpoints `before:<id>` / `after:<id>`,
+  and `finish()` wrote `before:capitalization` / `after:capitalization` with an overwriting put, so an event
+  whose id is "capitalization" lost its checkpoints. Wrote the test first:
+  `CapitalizationTest.anEventNamedCapitalizationKeepsItsOwnCheckpoints` failed at 2026-10-21T01:59:03Z with
+  `expected: <0> but was: <12>`. Fix: the engine's own end-of-window checkpoints are now
+  `window:before-capitalization` / `window:after-capitalization`, a prefix no event can produce. `Demo` updated.
+- Rejected events and the clock: `submit()` moves the clock before checking the event, so a rejected event
+  with a valid booked day still closes earlier days, and those closes can charge fees. Kept as the policy (a
+  valid booked day means that day has arrived; otherwise a malformed event could keep a day open). Added
+  `DayCloseTest.aRejectedEventWithAValidBookedDayStillMovesTheClock` (rejected Day 6 event after E8 closes
+  Day 5, whose fee is the only new posting) and `DayCloseTest.anInvalidBookedDayDoesNotMoveTheClock`.
+  Documented in AMBIGUITIES §3; corrected §20 and the `InputValidationTest` comment, which said rejected
+  input "moves no money": the rejected event itself posts nothing, but the clock can move.
+- Failing-test explanation corrected (test comments, README, AMBIGUITIES §8). Earlier entries said fixing the
+  timing dependence would cost "daily reports that can change"; wrong: refunds would be new postings and the
+  frozen snapshots would stay as they are. The cause is the fee rule (no refund rule in the brief); the
+  cost of a fix is inventing that rule and customers seeing a fee charged then refunded. Both runs would
+  then net AED 0.00. Also corrected "decided once, at that day's close": the Day 2 and Day 4 fees are
+  charged when E7 re-checks those days; the accurate statement is "once charged, never taken back".
+- REJECTED, criterion 2: "Day 3 escapes only because the Day 2 fee counts" was wrong; Day 3 is +5 with that
+  fee and +30 without, positive either way.
+- `mvn test` → 84 passed; `mvn -Dtest=ArrivalTimingChallenge test` → 1 test, 1 failure, unchanged.

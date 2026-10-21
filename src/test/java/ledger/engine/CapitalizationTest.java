@@ -91,6 +91,19 @@ class CapitalizationTest {
     }
 
     @Test
+    void anEventNamedCapitalizationKeepsItsOwnCheckpoints() {
+        // Found in review: finish() wrote "before:capitalization", the same name submit() gives the
+        // checkpoint before an event whose id is "capitalization", and overwrote it.
+        LedgerEngine engine = Support.engine();
+        engine.submit(SourceEvent.credit("capitalization", 1, A, "AED", "10.00", 1));
+        long beforeEvent = engine.checkpoint("before:capitalization");
+        long afterEvent = engine.checkpoint("after:capitalization");
+        engine.finish();
+        assertEquals(beforeEvent, engine.checkpoint("before:capitalization"), "still the moment before the event");
+        assertEquals(afterEvent, engine.checkpoint("after:capitalization"), "still the moment after the event");
+    }
+
+    @Test
     void aSecondFinishAddsNothing() {
         LedgerEngine engine = Support.fullFixture();
         List<LedgerRecord> before = engine.records();

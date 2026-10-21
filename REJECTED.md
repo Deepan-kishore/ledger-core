@@ -18,8 +18,8 @@ known, re-checking the closed days oldest first:
 | 4 | 5 − 185 = **−180** | yes | −205 |
 | 5 | **−205** (at its close) | yes | −230 |
 
-So E7 causes **three** fees, on Days 2, 4 and 5, not one. Day 3 escapes only because the Day 2 fee counts on
-it. Tests: `OverdraftFeeTest.criterion2E7CausesThreeFeesNotOne`,
+So E7 causes **three** fees, on Days 2, 4 and 5, not one. Day 3 stays positive either way (+5 with the Day 2
+fee counted, +30 without), so it is not charged. Tests: `OverdraftFeeTest.criterion2E7CausesThreeFeesNotOne`,
 `OverdraftFeeTest.e7ImmediatelyCausesFeesForClosedDays2And4ButNot3`.
 
 ### Criterion 6 — "After E9, all balances and fees return to their pre-E7 values"

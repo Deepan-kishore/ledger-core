@@ -35,7 +35,14 @@ fees after a reversal (§8), settlement without an authorization (§10), interes
   only booked days. Skipped days are closed in order, each as of its own day.
 - **Impact**: E9 (Day 6) closes Day 5 before E9 is applied, so Day 5 closes at −230.00. Day 6 stays open
   while late E10 arrives.
-- **Tests**: `DayCloseTest.skippedDaysAreClosedInOrder`, `ReversalTest.e9ClosesDay5FirstSoItsFeeIsAlreadyCharged`.
+- **Rejected events**: the clock moves before the event's content is checked. A valid booked day means that
+  day has arrived, even if the event is then rejected (a bad amount, an unknown account), so earlier days
+  close and can be charged. The alternative, checking first and moving the clock only for accepted events,
+  would let a day stay open because its only event was malformed. Not moved by: a booked day outside
+  Day 1–6, a blank source id, or an event after the window is finished.
+- **Tests**: `DayCloseTest.skippedDaysAreClosedInOrder`, `ReversalTest.e9ClosesDay5FirstSoItsFeeIsAlreadyCharged`,
+  `DayCloseTest.aRejectedEventWithAValidBookedDayStillMovesTheClock`,
+  `DayCloseTest.anInvalidBookedDayDoesNotMoveTheClock`.
 
 ## 4. Original vs restated balances
 - **Alternatives**: overwrite past days; keep only the latest view; keep both.
@@ -77,9 +84,10 @@ fees after a reversal (§8), settlement without an authorization (§10), interes
   (c) delete them (forbidden: append-only).
 - **Decision**: (a). The brief's fee rule has no refund clause, so none is invented. Append-only does not
   forbid (b); it is a business decision.
-- **Impact**: ACC-001 ends at 390.00 before interest, not 465.00 (criterion 6 refused). Because closed days are
-  never re-decided, the fees also depend on when E9 arrives: AED 75.00 on Day 6, AED 50.00 on Day 5. That is
-  the intentionally failing test.
+- **Impact**: ACC-001 ends at 390.00 before interest, not 465.00 (criterion 6 refused). Because a fee, once
+  charged, is never taken back, the fees also depend on when E9 arrives: AED 75.00 on Day 6, AED 50.00 on
+  Day 5. That is the intentionally failing test. The cause is the missing refund rule, not the frozen day
+  snapshots: refunds would be new postings and the snapshots would stay as they are.
 - **Tests**: `ReversalTest.criterion6FeesAreKeptAfterTheReversal`; `ArrivalTimingChallenge` (fails on purpose).
 
 ## 9. No BHD overdraft fee is given
@@ -175,8 +183,9 @@ fees after a reversal (§8), settlement without an authorization (§10), interes
   `AuthorizationTest.approvedWhenRemainingIsExactlyZeroAndDeclinedOneMinorUnitAbove`.
 
 ## 20. Bad input, duplicates and blank ids
-- **Decision**: invalid input becomes a REJECTED outcome with an error code and moves no money. Too many
-  decimals is rejected, never rounded. Sending the same event again returns the original outcome; reusing an
+- **Decision**: invalid input becomes a REJECTED outcome with an error code, and the rejected event itself
+  posts nothing. (If its booked day is valid, the clock still moves and earlier days close: see §3.) Too
+  many decimals is rejected, never rounded. Sending the same event again returns the original outcome; reusing an
   id for a different event is rejected; a blank id is rejected without moving the clock.
 - **Tests**: `InputValidationTest.*`, `MoneyTest.excessPrecisionIsRejectedNotRounded`.
 

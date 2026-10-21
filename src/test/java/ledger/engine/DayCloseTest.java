@@ -14,6 +14,8 @@ import ledger.record.DayClose;
 import ledger.record.ErrorCode;
 import ledger.record.FeePolicyError;
 import ledger.record.LedgerRecord;
+import ledger.record.Outcome;
+import ledger.record.Posting;
 import ledger.record.PostingType;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +60,36 @@ class DayCloseTest {
         assertEquals(List.of(1, 2, 3), engine.view().recordsOf(DayClose.class).stream()
                 .filter(c -> c.accountId().equals(A)).map(LedgerRecord::recordedDay).toList(),
                 "each close is stamped with its own day");
+    }
+
+    @Test
+    void aRejectedEventWithAValidBookedDayStillMovesTheClock() {
+        // Policy: a valid booked day means that day has arrived, even if the event itself is invalid.
+        // So the earlier days close (and may be charged) before the event is checked and rejected.
+        LedgerEngine engine = Support.fixtureThrough("E8");
+        assertEquals(4, engine.lastClosedDay());
+        long postingsBefore = engine.view().postings().size();
+
+        Outcome bad = engine.submit(SourceEvent.credit("BAD", 6, A, "AED", "abc", 6));
+        assertEquals(Outcome.Status.REJECTED, bad.status());
+        assertEquals(ErrorCode.INVALID_AMOUNT, bad.errorCode());
+        assertTrue(bad.effectSequences().isEmpty(), "the rejected event itself posts nothing");
+
+        assertEquals(5, engine.lastClosedDay(), "Day 5 closed because Day 6 arrived");
+        List<Posting> newPostings = engine.view().postings().subList((int) postingsBefore,
+                engine.view().postings().size());
+        assertEquals(1, newPostings.size());
+        assertEquals(PostingType.OVERDRAFT_FEE, newPostings.get(0).type(), "the only new posting is Day 5's fee");
+        assertEquals("close of Day5", newPostings.get(0).cause());
+    }
+
+    @Test
+    void anInvalidBookedDayDoesNotMoveTheClock() {
+        LedgerEngine engine = Support.fixtureThrough("E8");
+        Outcome bad = engine.submit(SourceEvent.credit("BAD", 7, A, "AED", "1.00", 6));
+        assertEquals(ErrorCode.INVALID_BOOKED_DAY, bad.errorCode());
+        assertEquals(4, engine.lastClosedDay(), "Day 7 is outside the window, so nothing closes");
+        assertEquals(5, engine.watermark());
     }
 
     @Test

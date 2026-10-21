@@ -28,8 +28,8 @@ import org.junit.jupiter.api.Test;
  * the same correction, the same value dates.
  *
  * <p><b>What it reveals.</b> In this design the customer pays AED 75.00 if the correction arrives on Day 6
- * and AED 50.00 if it arrives on Day 5. A day's fee is decided once, at that day's close, from what is
- * known at that moment, and is never revisited:
+ * and AED 50.00 if it arrives on Day 5. A fee is charged as soon as a day is known to be negative (at its
+ * close, or when a backdated entry re-checks it), and once charged it is never taken back:
  * <ul>
  *   <li>Day 2 and Day 4 fees: charged the moment E7 posts, in both runs.</li>
  *   <li>Day 5: with E9 on Day 6, Day 5 has already closed at -205.00 and is charged; with E9 on Day 5,
@@ -37,11 +37,13 @@ import org.junit.jupiter.api.Test;
  * </ul>
  * So the charge depends on <em>when</em> a correction arrives, not only on <em>what</em> it corrects.
  *
- * <p><b>Why the design is like this, and what fixing it costs.</b> Closed days are frozen so that a day
- * already reported never changes. The price is this timing dependence. Removing it would mean making fees
- * a function of the final balances: re-checking closed days whenever a backdated entry changes them, and
- * refunding fees by new postings when a day turns positive again. That trades stable daily reports for
- * timing-independent charges. The brief does not decide that trade-off, so the engine does not pretend to.
+ * <p><b>Why the design is like this, and what fixing it costs.</b> The cause is the fee rule, not the
+ * frozen day snapshots: the brief says when to charge a fee but gives no rule for refunding one, so the
+ * engine never refunds. A fix would add that rule: whenever a correction makes a charged day positive
+ * again, append a +25.00 refund posting (the original fee and the day's snapshot stay as they are). Both
+ * runs would then end at AED 0.00 in net fees. The cost is a business rule the brief does not give (refund
+ * on any correction? only full reversals? only within the window?), and customers seeing a fee charged and
+ * later refunded. The engine does not invent that rule.
  *
  * <p>The first assertions check that both runs are valid (every event accepted or declined exactly as in
  * the fixture, and the same money moved apart from fees), so if this test fails anywhere other than the
