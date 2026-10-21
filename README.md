@@ -4,9 +4,9 @@ A small, runnable bank-ledger engine. It replays a fixed 10-event fixture over s
 accounts, charges overdraft fees, handles card-style holds, reverses a backdated debit, splits a credit
 into instalments, and capitalizes interest.
 
-> **Status: engine, report and failing test complete.** All ten events replay, the console prints the per-day
-> report, and the intentionally failing test exists. The remaining documents are not written yet.
-> This README grows with the code.
+Constants and why: [NUMBERS.md](NUMBERS.md). Open questions and how they were decided:
+[AMBIGUITIES.md](AMBIGUITIES.md). Verdicts on the eight acceptance criteria, and approaches dropped:
+[REJECTED.md](REJECTED.md). Timeline: [WORKLOG.md](WORKLOG.md).
 
 ## Package layout
 
@@ -22,6 +22,8 @@ into instalments, and capitalizes interest.
 
 - JDK 17 or newer (the build compiles with `--release 17`; it was verified on OpenJDK 25.0.2).
 - Apache Maven 3.6.3+ (verified with Maven 3.10.0). No Maven wrapper is included.
+- JUnit Jupiter 5.11.4, for tests only. Maven plugins: compiler 3.13.0, surefire 3.5.2, jar 3.4.2,
+  resources 3.3.1.
 - The first build downloads JUnit and Maven plugins into `~/.m2`. That is build setup only; the program
   itself has no runtime dependencies and stores nothing.
 
@@ -58,6 +60,22 @@ never added together).
 
 **`--trace`** adds every record the engine appended (`#22 rec Day5 ... value Day2` = record 22, written on
 Day 5, counting for Day 2). The flags can be combined.
+
+## Expected results
+
+| What | Value |
+|---|---|
+| ACC-001 closing balances as closed, Days 1–6 | 250.00, 250.00, 650.00, 465.00, −230.00, 390.93 (Day 6 includes interest) |
+| Auth-A | 250.00 − 0.00 − 200.00 = 50.00 ≥ 0 → approved; settled by E5 for 185.00, whole hold released |
+| E6 (Auth-Z) | rejected, no money moves |
+| Day 2 after E7, before any fee (criterion 1) | −370.00 |
+| Fees | Day 2 and Day 4 (found on Day 5 when E7 arrives), Day 5 (at its close): AED 75.00 |
+| Auth-B | −205.00 − 0.00 − 90.00 = −295.00 < 0 → declined |
+| ACC-001 restated, Days 1–6 | 250.00, 225.00, 625.00, 415.00, 390.00, 390.00 |
+| ACC-001 interest | 0.10 + 0.09 + 0.25 + 0.17 + 0.16 + 0.16 = 0.93 |
+| E10 | 3.334 + 3.333 + 3.333 = 10.000; processed Day 6, counts for Day 5 |
+| ACC-002 interest | 0.004 + 0.004 = 0.008 |
+| Final | ACC-001 AED 390.93, ACC-002 BHD 10.008 |
 
 ## Balance formula
 

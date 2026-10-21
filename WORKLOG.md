@@ -165,3 +165,22 @@ All times are UTC, taken with `date -u` while working.
   assertion: `expected: <AED 50.00> but was: <AED 75.00>`.
 - README: command, expected result and a short explanation.
 - Next: documentation (NUMBERS, AMBIGUITIES, criteria verdicts in REJECTED, architecture document).
+
+## 2026-10-21T01:39:26Z — Documentation: REJECTED, AMBIGUITIES, NUMBERS
+- REJECTED.md: refused criteria 2, 6, 7 and 8, each with its reasoning and the test that proves it
+  (2: E7 causes three fees, Days 2, 4 and 5; 6: fees are kept, so ACC-001 ends at 390.00 not 465.00 before
+  interest; 7: 3 × 3.334 = 10.002; 8: the credit is the sum of the rounded days, so nothing is left to
+  discard). Then the approach abandoned mid-build (the first report, `52093cb` → `391f6a8`), approaches
+  considered but not built, and the accepted criteria 1, 3, 4 (with the forced-capture caveat) and 5
+  (conditional; Auth-B is declined).
+- AMBIGUITIES.md: 24 entries, each with alternatives, decision, impact and tests. Includes which balance an
+  authorization is judged against: Auth-B at −205 here (the Day 2 and Day 4 fees are already booked),
+  where other readings give −155; declined either way.
+- NUMBERS.md: the numbers the brief gives, then every number I chose with "why this value" and "why not
+  half", then the edge-case values the tests use.
+- First draft reviewed against the brief's wording and trimmed: removed a defensive sentence about the given
+  numbers; moved the computed results and build versions to README (results are outputs, not chosen
+  constants); reordered REJECTED to lead with what the brief asks for (refused criteria, abandoned
+  approaches) and put the accepted criteria last.
+- README: links to the docs, Expected results table, build versions under Prerequisites.
+- Checked every test the docs name exists. `mvn test` → 81 passed.
