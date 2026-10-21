@@ -55,7 +55,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>ledger.Demo</mainClass>
+              <mainClass>ledger.report.Demo</mainClass>
             </manifest>
           </archive>
         </configuration>

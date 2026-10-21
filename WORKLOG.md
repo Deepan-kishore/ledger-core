@@ -119,3 +119,17 @@ All times are UTC, taken with `date -u` while working.
 - Checked the tests catch a real bug: switched HALF_EVEN to HALF_UP → 2 tiebreak tests failed, while the
   fixture results stayed 0.93 and 0.008 (no fixture day lands exactly on a half); restored.
 - Next: the per-day console report.
+
+## 2026-10-21T00:35:08Z — Per-day console report
+- New package `ledger.report`: `Demo` replays the 10 fixture events through the engine, calls `finish()`, and
+  prints a `DAILY REPORT`: for each day and both accounts, closing ledger balance (as known then and
+  restated), available balance, overdraft fees (effective day and day found), authorization states as
+  known that day, errors that day, and that day's interest; empty sections print "none". After it: Day 2
+  at named cutoffs (250, 250, −370, −395, 225), the interest table and final balances. `--trace` adds every
+  record, event by event. Every number comes from the engine; nothing is hard-coded.
+- `pom.xml` main class is now `ledger.report.Demo`, so `java -jar target/in-memory-ledger-1.0.0.jar` runs it.
+  41 records; final ACC-001 AED 390.93, ACC-002 BHD 10.008.
+- New tests: `ReportTest` (6): every day has all four required sections for both accounts, balances,
+  fee dates, authorization states and errors on the right days, console output, `--trace`.
+  `mvn test` → 79 passed.
+- Next: reviewing the output against the brief's wording.
