@@ -145,3 +145,23 @@ All times are UTC, taken with `date -u` while working.
   the restated balances, the −370.00 cutoff and the interest table back. Its first run failed: the word
   "restated" appears in the default's hint line about `--detail`; narrowed the check to the report row.
   `mvn test` → 81 passed.
+
+## 2026-10-21T01:00:17Z — Intentionally failing test: fees depend on when a correction arrives
+- Question asked of the design: if the correction E9 reached the ledger a day earlier (Day 5 instead of
+  Day 6), would the customer pay the same fees? Worked it through: with E9 on Day 5 it lands before Day 5
+  closes, so Day 5 closes at −205 + 620 = +415 and is not charged; the Day 2 and Day 4 fees still exist
+  because they are booked the moment E7 posts. AED 50.00 instead of AED 75.00 for the same facts.
+- Cause: a day's fee is decided once, at that day's close, and never revisited (closed days are frozen so
+  reported days never change). The cost is that charges depend on processing timing. Fixing it would mean
+  basing fees on final balances and refunding by new postings, so past daily reports could change. The
+  brief does not decide that trade-off, so the design is kept and the limitation is shown by a test.
+- `ArrivalTimingChallenge`: replays the fixture twice, identical except E9's booked day, and asserts equal
+  fees. Before that assertion it checks both runs are valid (E9 accepted, E6 rejected, E8 declined, same
+  principal moved), so it can only fail on the design question. Annotated inline with the scenario, what
+  it reveals, and what a fix would cost.
+- Kept out of `mvn test` by its name (Surefire runs only *Test classes), so the normal build stays green and
+  `mvn package` still builds the JAR. Verified: `mvn test` → 81 passed, challenge not mentioned;
+  `mvn -Dtest=ArrivalTimingChallenge test` → 1 test, 1 failure, 0 errors, exit 1, failing at the final
+  assertion: `expected: <AED 50.00> but was: <AED 75.00>`.
+- README: command, expected result and a short explanation.
+- Next: documentation (NUMBERS, AMBIGUITIES, criteria verdicts in REJECTED, architecture document).

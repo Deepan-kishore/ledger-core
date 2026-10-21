@@ -4,8 +4,8 @@ A small, runnable bank-ledger engine. It replays a fixed 10-event fixture over s
 accounts, charges overdraft fees, handles card-style holds, reverses a backdated debit, splits a credit
 into instalments, and capitalizes interest.
 
-> **Status: engine and report complete.** All ten events replay and the console prints the per-day report.
-> The intentionally failing test and the remaining documents are not written yet.
+> **Status: engine, report and failing test complete.** All ten events replay, the console prints the per-day
+> report, and the intentionally failing test exists. The remaining documents are not written yet.
 > This README grows with the code.
 
 ## Package layout
@@ -33,6 +33,7 @@ mvn package                                   # runs the suite again and builds 
 java -jar target/in-memory-ledger-1.0.0.jar   # replays the 10 events and prints the per-day report
 java -jar target/in-memory-ledger-1.0.0.jar --detail   # adds restated balances, cutoffs and interest
 java -jar target/in-memory-ledger-1.0.0.jar --trace    # adds every record, event by event
+mvn -Dtest=ArrivalTimingChallenge test       # the intentionally failing test: 1 failure, exit 1
 ```
 
 ## Reading the output
@@ -84,3 +85,33 @@ then (after all events and fees, but before the interest credit itself). Final b
 
 Every record in the log gets the next sequence number. The *cutoff* says "as known up to record N", which
 a day number alone cannot express when several things happen on one day.
+
+## The intentionally failing test
+
+`ArrivalTimingChallenge` is a failing test against this design, kept out of the normal suite on purpose
+(its name does not match Surefire's `*Test` pattern, so `mvn test` stays green and `mvn package` still
+builds the JAR). Run it on its own:
+
+```bash
+mvn -Dtest=ArrivalTimingChallenge test
+```
+
+Expected result: `Tests run: 1, Failures: 1, Errors: 0`, exit code 1,
+`expected: <AED 50.00> but was: <AED 75.00>`.
+
+**Scenario.** The bank wrongly debits AED 620.00 (E7) and corrects it (E9). Whether the correction reaches
+the ledger late on Day 5 or early on Day 6 depends on the bank's own processing, not the customer. The test
+replays the fixture twice, identical except for E9's day, and expects the same overdraft fees.
+
+| | Correction on Day 6 (the fixture) | Correction on Day 5 |
+|---|---|---|
+| Day 2 and Day 4 fees | charged when E7 posts | charged when E7 posts |
+| Day 5 at its close | −205.00 → fee | +415.00 → no fee |
+| Total fees | **AED 75.00** | **AED 50.00** |
+
+**What it reveals.** A day's fee is decided once, at that day's close, and never revisited, so the charge
+depends on *when* a correction arrives, not only on *what* it corrects. That is the cost of keeping closed
+days frozen. Fixing it would mean basing fees on the final balances and refunding them by new postings
+when a correction turns a day positive, at the price of daily reports that can change after the fact.
+Before its final assertion, the test checks that both runs are valid and moved the same money, so it can
+only fail on the design question.
