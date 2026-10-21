@@ -22,6 +22,7 @@ import ledger.record.AuthorizationFact;
 import ledger.record.DayClose;
 import ledger.record.ErrorCode;
 import ledger.record.FeePolicyError;
+import ledger.record.InterestReport;
 import ledger.record.LedgerRecord;
 import ledger.record.Outcome;
 import ledger.record.Posting;
@@ -146,15 +147,41 @@ public final class LedgerEngine {
         return outcome;
     }
 
-    /** End of input: closes every remaining day including Day 6. Calling it again does nothing. */
+    /**
+     * End of input. Closes every remaining day, charges any Day 6 fee, then capitalizes interest once per
+     * account and takes the Day 6 snapshot last, so it includes the credit. Calling it again does nothing.
+     *
+     * <p>Interest is computed on each day's closing balance as known now (after every event and every fee),
+     * using a cutoff taken before the credit is posted, so the credit never earns interest on itself.
+     */
     public void finish() {
         if (finalized) {
             return;
         }
-        for (int d = lastClosedDay + 1; d <= LAST_DAY; d++) {
+        for (int d = lastClosedDay + 1; d < LAST_DAY; d++) {
             closeDay(d);
         }
         watermark = LAST_DAY;
+        assessFees(LAST_DAY);
+        long basisCutoff = lastSequence();
+        checkpoints.put("before:capitalization", basisCutoff);
+        LedgerView view = liveView();
+        for (Account a : accounts.values()) {
+            List<Money> closes = new ArrayList<>();
+            for (int d = FIRST_DAY; d <= LAST_DAY; d++) {
+                closes.add(view.balance(a.id(), d, basisCutoff));
+            }
+            InterestCalculator.Result result = InterestCalculator.calculate(a.currency(), closes);
+            append(new InterestReport(nextSequence(), LAST_DAY, a.id(), basisCutoff, result.days(),
+                    result.rawSum(), result.capitalized()));
+            if (!result.capitalized().isZero()) {
+                append(new Posting(nextSequence(), LAST_DAY, a.id(), PostingType.INTEREST_CAPITALIZATION,
+                        result.capitalized(), LAST_DAY, null, "CAP|" + a.id(), null, "interest capitalization Day1-Day6"));
+            }
+        }
+        checkpoints.put("after:capitalization", lastSequence());
+        snapshotCloses(LAST_DAY, true);
+        lastClosedDay = LAST_DAY;
         finalized = true;
     }
 
@@ -228,18 +255,27 @@ public final class LedgerEngine {
 
     /** Assesses each account's fee for the day, then freezes a snapshot of the day as known now. */
     private void closeDay(int day) {
+        assessFees(day);
+        snapshotCloses(day, false);
+        lastClosedDay = day;
+    }
+
+    private void assessFees(int day) {
         for (Account a : accounts.values()) {
             assessFee(a.id(), day, day, "close of Day" + day, new ArrayList<>());
         }
+    }
+
+    private void snapshotCloses(int day, boolean postCapitalization) {
         long cutoff = lastSequence();
         LedgerView view = liveView();
         for (Account a : accounts.values()) {
             Money ledger = view.balance(a.id(), day, cutoff);
             Money holds = view.activeHolds(a.id(), day, cutoff);
-            append(new DayClose(nextSequence(), day, a.id(), day, ledger, holds, ledger.minus(holds), cutoff));
+            append(new DayClose(nextSequence(), day, a.id(), day, ledger, holds, ledger.minus(holds), cutoff,
+                    postCapitalization));
         }
         checkpoints.put("close:Day" + day, lastSequence());
-        lastClosedDay = day;
     }
 
     /**

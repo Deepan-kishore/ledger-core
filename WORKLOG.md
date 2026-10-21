@@ -101,3 +101,21 @@ All times are UTC, taken with `date -u` while working.
 - Checked the tests catch a real bug: gave the leftover fil to the last child instead of the first →
   2 failures; restored.
 - Next: interest and capitalization.
+
+## 2026-10-21T00:14:01Z — Interest and capitalization
+- `InterestCalculator`: each day's interest = closing balance × 0.0004 if positive (the rate is per day, not
+  divided by 365), rounded on its own with HALF_EVEN to the currency's decimals. The capitalized credit is
+  the sum of the six rounded days, so "the rounded daily accruals must sum exactly" holds by definition
+  and there is never a remainder to discard: criterion 8 is wrong.
+- Basis: each day's balance with everything known at the end of the window (after E7, its fees, E9 and late
+  E10), not the balance as known on that day. ACC-001: 250, 225, 625, 415, 390, 390 → 0.10 + 0.09 + 0.25 +
+  0.17 + 0.16 + 0.16 = 0.93 (exact sum 0.918). ACC-002: 10.000 on Days 5–6 → 0.004 + 0.004 = 0.008.
+- Order in `finish()`: close Days 1–5, charge any Day 6 fee, compute interest with a cutoff taken before the
+  credit (so the credit earns no interest on itself), post one credit per account dated Day 6, then take
+  the Day 6 snapshot last (marked post-capitalization). Final: ACC-001 AED 390.93, ACC-002 BHD 10.008.
+- Interest uses the ledger balance, not available: an unsettled hold does not reduce it.
+- One earlier test changed because interest now exists: the end-to-end balance went from 390.00 to 390.93.
+- New tests: `InterestCalculatorTest` (8) and `CapitalizationTest` (7). `mvn test` → 73 passed.
+- Checked the tests catch a real bug: switched HALF_EVEN to HALF_UP → 2 tiebreak tests failed, while the
+  fixture results stayed 0.93 and 0.008 (no fixture day lands exactly on a half); restored.
+- Next: the per-day console report.

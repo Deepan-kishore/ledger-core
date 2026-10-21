@@ -14,7 +14,8 @@ import ledger.money.Money;
  *   <li>available = ledger - activeHolds</li>
  * </ul>
  *
- * @param knowledgeCutoff the last sequence included in this snapshot
+ * @param knowledgeCutoff    the last sequence included in this snapshot
+ * @param postCapitalization true only for the Day 6 snapshot, which is taken after the interest credit
  */
 public record DayClose(
         long sequence,
@@ -24,7 +25,8 @@ public record DayClose(
         Money ledger,
         Money activeHolds,
         Money available,
-        long knowledgeCutoff) implements LedgerRecord {
+        long knowledgeCutoff,
+        boolean postCapitalization) implements LedgerRecord {
 
     public DayClose {
         Objects.requireNonNull(accountId, "accountId");

@@ -13,5 +13,7 @@ public enum PostingType {
     /** Equal and opposite to an earlier CREDIT or DEBIT posting; the original stays in the log. */
     REVERSAL,
     /** One child of an instalment credit; the children sum exactly to the total. */
-    INSTALMENT_CREDIT
+    INSTALMENT_CREDIT,
+    /** The single end-of-Day-6 credit equal to the sum of the rounded daily interest accruals. */
+    INTEREST_CAPITALIZATION
 }

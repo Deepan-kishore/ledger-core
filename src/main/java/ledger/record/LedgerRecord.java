@@ -9,7 +9,7 @@ package ledger.record;
  * not enough, because several things can happen on the same day and we need to ask about the moment
  * between them.
  */
-public sealed interface LedgerRecord permits Posting, Outcome, AuthorizationFact, DayClose, FeePolicyError {
+public sealed interface LedgerRecord permits Posting, Outcome, AuthorizationFact, DayClose, FeePolicyError, InterestReport {
 
     long sequence();
 

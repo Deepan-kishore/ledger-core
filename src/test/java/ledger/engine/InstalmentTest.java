@@ -93,8 +93,8 @@ class InstalmentTest {
     void theWholeFixtureRunsToTheEnd() {
         LedgerEngine engine = Support.fullFixture();
         assertTrue(engine.isFinalized());
-        assertEquals(Support.aed("390.00"), Support.now(engine, Support.A, 6));
-        assertEquals(bhd("10.000"), Support.now(engine, B, 6));
+        assertEquals(Support.aed("390.93"), Support.now(engine, Support.A, 6), "390.00 plus 0.93 interest");
+        assertEquals(bhd("10.008"), Support.now(engine, B, 6), "10.000 plus 0.008 interest");
         assertTrue(engine.view().postings(Support.A, PostingType.OVERDRAFT_FEE).stream()
                 .noneMatch(f -> f.valueDay() == 6), "Day 6 closes positive");
     }
