@@ -38,6 +38,8 @@ java -jar target/in-memory-ledger-1.0.0.jar --trace    # adds every record, even
 mvn -Dtest=ArrivalTimingChallenge test       # the intentionally failing test: 1 failure, exit 1
 ```
 
+How replay time grows with volume, and how it was measured: [bench/README.md](bench/README.md).
+
 ## Reading the output
 
 **Default:** exactly what the brief asks for. `DAILY REPORT` has one block per day with both accounts:

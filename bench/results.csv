@@ -1,0 +1,15 @@
+# Measured against ledger-core commit 1a02069, Apple M4, JDK 25, -Xmx6g, best of 3 runs after JIT warm-up.
+variant,copies,events,records,replay_ms,one_auth_ms,finish_ms,total_ms
+current,100,1000,4102,36.6,0.05,19.0,55.6
+current,1000,10000,41002,3319.6,0.48,1801.0,5120.6
+current,3000,30000,123002,39495.7,1.67,17895.4,57391.2
+no-defensive-copy,1000,10000,41002,2915.5,0.39,1837.0,4752.5
+no-defensive-copy,3000,30000,123002,36613.0,1.43,18483.6,55096.6
+per-account-index,100,1000,4102,5.3,0.01,0.9,6.2
+per-account-index,1000,10000,41002,194.2,0.31,5.7,199.9
+per-account-index,3000,30000,123002,1684.2,0.87,15.5,1699.7
+per-account-index,10000,100000,410002,41197.5,3.02,49.4,41246.9
+plus-auth-and-original-posting-index,100,1000,4102,3.9,0.04,0.8,4.7
+plus-auth-and-original-posting-index,1000,10000,41002,22.3,0.02,6.3,28.6
+plus-auth-and-original-posting-index,3000,30000,123002,54.0,0.01,13.0,67.1
+plus-auth-and-original-posting-index,10000,100000,410002,200.6,0.01,53.1,253.7

@@ -210,3 +210,18 @@ All times are UTC, taken with `date -u` while working.
 - REJECTED, criterion 2: "Day 3 escapes only because the Day 2 fee counts" was wrong; Day 3 is +5 with that
   fee and +30 without, positive either way.
 - `mvn test` → 84 passed; `mvn -Dtest=ArrivalTimingChallenge test` → 1 test, 1 failure, unchanged.
+
+## 2026-10-21T04:52:42Z — Scale probe for the architecture document
+- Measured instead of estimating, with AI assistance: `bench/ScaleProbe.java` replays k copies of the
+  fixture on separate accounts and times replay, `finish()` and one authorization (best of 3, after warm-up).
+- Against `1a02069`: 1,000 events (100×) 56 ms; 10,000 events 5.1 s; 30,000 events 57 s. Ten times the events
+  cost 92× the time: quadratic, because every fee check, authorization and close builds a view that scans the
+  whole log.
+- First guess was the defensive copy in `LedgerView` (added in step 3). Switched it off as a throwaway
+  change: 30,000 events 57 s → 55 s, about 4%. The copy is not the cost; the scans are. Copy kept.
+- Per-account index (postings and authorization facts kept per account): 30,000 events 1.7 s, but 100,000
+  still 41 s; looking up an authorization by id and a reversal's original posting still scanned everything.
+  Adding those two lookups: 100,000 events in 0.25 s, linear. Same output, 84 tests pass. Kept on the branch
+  `perf/index-on-write`, not merged: the brief needs ten events, and the index is the change the architecture
+  document proposes, not a requirement.
+- `bench/README.md` has the commands and the results table; raw rows in `bench/results.csv`.
