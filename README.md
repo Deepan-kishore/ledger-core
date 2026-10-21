@@ -28,30 +28,35 @@ into instalments, and capitalizes interest.
 ## Commands (from a clean checkout)
 
 ```bash
-mvn test                                      # runs the test suite (79 tests so far)
+mvn test                                      # runs the test suite (81 tests so far)
 mvn package                                   # runs the suite again and builds the JAR
 java -jar target/in-memory-ledger-1.0.0.jar   # replays the 10 events and prints the per-day report
-java -jar target/in-memory-ledger-1.0.0.jar --trace   # also prints every record, event by event
+java -jar target/in-memory-ledger-1.0.0.jar --detail   # adds restated balances, cutoffs and interest
+java -jar target/in-memory-ledger-1.0.0.jar --trace    # adds every record, event by event
 ```
 
 ## Reading the output
 
-1. **`DAILY REPORT`**: for each day, for each account:
-   - `closing ledger balance`: as known when that day closed (never edited later);
-   - `restated`: the same day recomputed once all input is known (ACC-001 Day 2: 250.00 then 225.00);
-   - `available balance`: ledger minus the holds active that day;
-   - `overdraft fee`: fees belonging to that day, with the day each was found
-     (`AED 25.00 effective Day2, discovered Day5`); on Day 5, also the earlier-day fees booked that day;
-   - `authorizations`: each authorization's state as known that day, marked `(changed today)`;
-   - `errors`: events rejected or declined that day (E6 on Day 4, E8 on Day 5);
-   - `interest accrual`: that day's rounded interest, and on Day 6 the capitalized total.
-   Empty sections print `none`.
-2. **`ACC-001 DAY2 BALANCE AT NAMED KNOWLEDGE CUTOFFS`**: 250.00, 250.00, −370.00, −395.00, 225.00 (criterion 1
-   is the −370.00 line: after E7, before any fee).
-3. **`INTEREST`**: each day's balance, raw and rounded interest, and the capitalization credit.
-4. **`FINAL BALANCES`**: ACC-001 AED 390.93, ACC-002 BHD 10.008 (currencies are never added together).
-5. With `--trace`: every record the engine appended (`#22 rec Day5 ... value Day2` = record 22, written on
-   Day 5, counting for Day 2).
+**Default:** exactly what the brief asks for. `DAILY REPORT` has one block per day with both accounts:
+- `closing ledger balance`: as known when that day closed (never edited later); Day 6 includes the interest
+  credit;
+- `overdraft fee`: fees belonging to that day, with the day each was found
+  (`AED 25.00 effective Day2, discovered Day5`); on Day 5, also `earlier-day fees booked` that day;
+- `authorizations`: each authorization's state as known that day, marked `(changed today)`;
+- `errors`: events rejected or declined that day (E6 on Day 4, E8 on Day 5).
+
+Empty sections print `none`. Then `FINAL BALANCES`: ACC-001 AED 390.93, ACC-002 BHD 10.008 (currencies are
+never added together).
+
+**`--detail`** adds:
+- per day, `restated` (the same day recomputed once all input is known: ACC-001 Day 2 250.00 then 225.00),
+  `available balance` (ledger minus that day's holds) and `interest accrual`;
+- `ACC-001 DAY2 BALANCE AT NAMED KNOWLEDGE CUTOFFS`: 250.00, 250.00, −370.00, −395.00, 225.00. Criterion 1 is
+  the −370.00 line: after E7, before any fee;
+- `INTEREST`: each day's balance, raw and rounded interest, and the capitalization credit.
+
+**`--trace`** adds every record the engine appended (`#22 rec Day5 ... value Day2` = record 22, written on
+Day 5, counting for Day 2). The flags can be combined.
 
 ## Balance formula
 

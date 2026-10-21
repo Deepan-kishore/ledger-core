@@ -133,3 +133,15 @@ All times are UTC, taken with `date -u` while working.
   fee dates, authorization states and errors on the right days, console output, `--trace`.
   `mvn test` → 79 passed.
 - Next: reviewing the output against the brief's wording.
+
+## 2026-10-21T00:42:30Z — Report changed: default shows only what the brief asks for
+- Reviewed the step 8 output (`52093cb`) against the brief: "prints, per day: closing ledger balance, fee
+  assessments, authorization states, and errors". It printed those, but each day also carried the restated
+  balance, available balance and interest, plus two tables after the report. Not a rule violation (the
+  brief sets a minimum), but the required items were buried among extra lines.
+- Changed the default to exactly the four items per day plus final balances. The extras are still there
+  behind `--detail`; `--trace` is unchanged. Recorded in REJECTED.md as an approach abandoned mid-build.
+- `ReportTest`: new checks that every default line is one of the required items, and that `--detail` brings
+  the restated balances, the −370.00 cutoff and the interest table back. Its first run failed: the word
+  "restated" appears in the default's hint line about `--detail`; narrowed the check to the report row.
+  `mvn test` → 81 passed.

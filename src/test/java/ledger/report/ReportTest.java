@@ -18,13 +18,17 @@ class ReportTest {
     private static final String A = Fixture.ACC_AED;
     private static final String B = Fixture.ACC_BHD;
 
-    private static List<String> report() {
+    private static List<String> report(boolean detail) {
         LedgerEngine engine = new LedgerEngine(Fixture.accounts(), LedgerEngine.standardFeeTariffs());
         for (SourceEvent e : Fixture.events()) {
             engine.submit(e);
         }
         engine.finish();
-        return Demo.dailyReport(engine);
+        return Demo.dailyReport(engine, detail);
+    }
+
+    private static List<String> report() {
+        return report(false);
     }
 
     /** Lines of one account's block on one day of the daily report. */
@@ -71,8 +75,19 @@ class ReportTest {
     }
 
     @Test
-    void balancesShowWhatWasKnownThenAndWhatIsKnownNow() {
-        List<String> report = report();
+    void byDefaultEachDayShowsOnlyTheFourItemsTheBriefAsksFor() {
+        List<String> labels = List.of("closing ledger balance", "overdraft fee", "earlier-day fees booked",
+                "authorizations", "errors");
+        for (String line : report()) {
+            if (line.startsWith("    ")) {
+                assertTrue(labels.stream().anyMatch(line::contains), "unexpected default line: " + line);
+            }
+        }
+    }
+
+    @Test
+    void detailAddsRestatedBalancesAvailableAndInterest() {
+        List<String> report = report(true);
         List<String> d2 = block(report, 2, A);
         assertTrue(has(d2, "closing ledger balance  : 250.00"));
         assertTrue(has(d2, "restated                : 225.00 (changed by events that arrived later)"));
@@ -109,14 +124,26 @@ class ReportTest {
     }
 
     @Test
-    void consoleOutputRunsTheRealEngine() {
+    void defaultConsoleOutputIsTheDailyReportAndFinalBalances() {
         String out = runDemo();
-        for (String label : List.of("DAILY REPORT", "KNOWLEDGE CUTOFFS", "INTEREST",
-                "ACC-001 ledger AED 390.93", "ACC-002 ledger BHD 10.008", "replay finished normally")) {
+        for (String label : List.of("DAILY REPORT", "ACC-001 ledger AED 390.93", "ACC-002 ledger BHD 10.008",
+                "replay finished normally")) {
             assertTrue(out.contains(label), "missing: " + label);
         }
-        assertFalse(out.contains("EVENT-BY-EVENT TRACE"), "the trace is opt-in");
+        for (String extra : List.of("    restated   ", "KNOWLEDGE CUTOFFS", "==== INTEREST", "EVENT-BY-EVENT TRACE")) {
+            assertFalse(out.contains(extra), "only with a flag: " + extra);
+        }
         assertFalse(out.contains("Exception"));
+    }
+
+    @Test
+    void detailFlagAddsCheckpointsAndInterest() {
+        String out = runDemo("--detail");
+        for (String label : List.of("    restated   ", "KNOWLEDGE CUTOFFS", "principal:E7", "-370.00",
+                "==== INTEREST", "sum of rounded daily accruals 0.93")) {
+            assertTrue(out.contains(label), "missing: " + label);
+        }
+        assertFalse(out.contains("EVENT-BY-EVENT TRACE"));
     }
 
     @Test

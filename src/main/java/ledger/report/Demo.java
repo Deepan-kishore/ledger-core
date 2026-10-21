@@ -28,9 +28,13 @@ import ledger.record.PostingType;
  * recorded. Nothing printed here is a hard-coded expected value: every number comes from the engine.
  * All state lives in memory and is gone when the program exits.
  *
- * <p>Output: the per-day report the brief asks for, then only what that report does not show (Day 2 at
- * named knowledge cutoffs, the interest calculation, final balances). Run with {@code --trace} to also
- * print every record the engine appended, event by event.
+ * <p>Default output is exactly what the brief asks for, per day: closing ledger balance, fee assessments,
+ * authorization states and errors, followed by the final balances. Two optional flags add more:
+ * <ul>
+ *   <li>{@code --detail}: per day, the restated balance, available balance and interest accrual; then Day 2
+ *       at named knowledge cutoffs and the interest calculation.</li>
+ *   <li>{@code --trace}: every record the engine appended, event by event.</li>
+ * </ul>
  */
 public final class Demo {
 
@@ -54,45 +58,55 @@ public final class Demo {
         engine.finish(); // second call must be a no-op
         trace.add("   (finish() called a second time: " + (engine.lastSequence() - seen) + " new records)");
 
+        boolean detail = List.of(args).contains("--detail");
+        boolean traced = List.of(args).contains("--trace");
+
         line("IN-MEMORY LEDGER REPLAY (state lives in RAM only; every run starts from the openings)");
         for (Account a : engine.accounts()) {
             System.out.println("  account " + a.id() + " " + a.currency() + " opening " + a.opening().plain()
                     + " (scale " + a.currency().scale() + ")");
         }
-        System.out.println("  overdraft tariff: " + LedgerEngine.standardFeeTariffs()
-                + "; interest " + InterestCalculator.DAILY_RATE.toPlainString() + " per day on positive closes");
+        if (detail) {
+            System.out.println("  overdraft tariff: " + LedgerEngine.standardFeeTariffs()
+                    + "; interest " + InterestCalculator.DAILY_RATE.toPlainString() + " per day on positive closes");
+        }
 
         line("DAILY REPORT (one block per day, both accounts)");
         System.out.println("  closing ledger balance = as known when the day closed (never edited afterwards)");
-        System.out.println("  restated               = the same day recomputed once all input is known");
         System.out.println("  fee effective day      = the day the fee belongs to; discovered = the day it was booked");
-        for (String row : dailyReport(engine)) {
+        if (detail) {
+            System.out.println("  restated               = the same day recomputed once all input is known");
+        }
+        for (String row : dailyReport(engine, detail)) {
             System.out.println(row);
         }
 
         LedgerView view = engine.view();
-        printCheckpoints(engine, view);
-        printInterest(view);
+        if (detail) {
+            printCheckpoints(engine, view);
+            printInterest(view);
+        }
         printFinal(engine, view);
 
-        if (List.of(args).contains("--trace")) {
+        if (traced) {
             line("EVENT-BY-EVENT TRACE (every record the engine appended, in order)");
             for (String row : trace) {
                 System.out.println(row);
             }
-        } else {
-            System.out.println("  (run with --trace to print every record the engine appended)");
+        }
+        if (!detail || !traced) {
+            System.out.println("  (more: --detail for restated balances and interest, --trace for every record)");
         }
     }
 
     // ------------------------------------------------------------------ daily report
 
     /**
-     * For each day and each account: closing ledger balance (original and restated), available
-     * balance, overdraft fees, authorization states as known at that day's close, errors recorded
-     * that day, and the day's interest accrual. Empty sections print "none".
+     * For each day and each account: closing ledger balance as known at that day's close, overdraft fees,
+     * authorization states as known at the close, and errors recorded that day. Empty sections print
+     * "none". With {@code detail}, also the restated balance, available balance and interest accrual.
      */
-    static List<String> dailyReport(LedgerEngine engine) {
+    static List<String> dailyReport(LedgerEngine engine, boolean detail) {
         LedgerView view = engine.view();
         long restatedCutoff = engine.checkpoint("before:capitalization");
         Map<String, String> accountOfSource = new HashMap<>();
@@ -113,14 +127,16 @@ public final class Demo {
 
                 out.add(row("closing ledger balance", close.ledger().plain()
                         + (lastDay ? " (after interest capitalization)" : "")));
-                if (lastDay) {
-                    out.add(row("before capitalization", restated.plain()));
-                } else {
-                    out.add(row("restated", restated.plain() + (restated.compareTo(close.ledger()) == 0
-                            ? " (unchanged)" : " (changed by events that arrived later)")));
+                if (detail) {
+                    if (lastDay) {
+                        out.add(row("before capitalization", restated.plain()));
+                    } else {
+                        out.add(row("restated", restated.plain() + (restated.compareTo(close.ledger()) == 0
+                                ? " (unchanged)" : " (changed by events that arrived later)")));
+                    }
+                    out.add(row("available balance", close.available().plain()
+                            + " (ledger minus active holds " + close.activeHolds().plain() + ")"));
                 }
-                out.add(row("available balance", close.available().plain()
-                        + " (ledger minus active holds " + close.activeHolds().plain() + ")"));
 
                 List<String> fees = new ArrayList<>();
                 for (Posting p : view.postings(id, PostingType.OVERDRAFT_FEE)) {
@@ -157,7 +173,7 @@ public final class Demo {
                 addAll(out, "errors", errors);
 
                 for (InterestReport r : view.recordsOf(InterestReport.class)) {
-                    if (r.accountId().equals(id)) {
+                    if (detail && r.accountId().equals(id)) {
                         InterestReport.DailyAccrual accrual = r.days().get(d - 1);
                         out.add(row("interest accrual", accrual.rounded().plain() + " (on restated balance "
                                 + accrual.basis().plain() + ")"));
