@@ -62,6 +62,12 @@ public final class LedgerEngine {
     private final Set<String> reversedSourceIds = new HashSet<>();
     private final Map<String, Long> checkpoints = new LinkedHashMap<>();
 
+    // Indexes kept in step with the log on every append (see append). They hold no new information: each can be
+    // rebuilt by scanning the log. They exist so a check reads one account's records, not the whole log.
+    private final Map<String, List<LedgerRecord>> byAccount = new HashMap<>();
+    private final Map<String, AuthorizationFact> latestAuthorizationById = new HashMap<>();
+    private final Map<String, Posting> principalBySourceId = new HashMap<>();
+
     private int watermark = FIRST_DAY;
     private int lastClosedDay = FIRST_DAY - 1;
     private boolean finalized;
@@ -421,6 +427,10 @@ public final class LedgerEngine {
     }
 
     private Posting findPrincipalPosting(String sourceId) {
+        Posting indexed = principalBySourceId.get(sourceId);
+        if (indexed != null) {
+            return indexed;
+        }
         for (LedgerRecord r : records) {
             if (r instanceof Posting p && sourceId.equals(p.sourceId())
                     && (p.type() == PostingType.EXTERNAL_CREDIT || p.type() == PostingType.EXTERNAL_DEBIT)) {
@@ -439,7 +449,7 @@ public final class LedgerEngine {
         Money hold = parsePositiveAmount(account, e.currencyText(), e.amountText());
         requireValueDay(e);
         String authId = requireAuthorizationId(e);
-        if (liveView().latestAuthorizationFact(authId, lastSequence()).isPresent()) {
+        if (latestAuthorizationById.containsKey(authId)) {
             throw new DomainException(ErrorCode.DUPLICATE_AUTHORIZATION_ID, "Authorization " + authId + " already exists");
         }
         // --- validation complete
@@ -471,7 +481,7 @@ public final class LedgerEngine {
         Money capture = parsePositiveAmount(account, e.currencyText(), e.amountText());
         requireValueDay(e);
         String authId = requireAuthorizationId(e);
-        AuthorizationFact latest = liveView().latestAuthorizationFact(authId, lastSequence())
+        AuthorizationFact latest = Optional.ofNullable(latestAuthorizationById.get(authId))
                 .orElseThrow(() -> new DomainException(ErrorCode.UNKNOWN_AUTHORIZATION,
                         "No authorization " + authId + " exists; settlement refused, no funds moved"));
         if (!latest.accountId().equals(account.id())) {
@@ -578,7 +588,7 @@ public final class LedgerEngine {
     // ------------------------------------------------------------------ log helpers
 
     private LedgerView liveView() {
-        return new LedgerView(accounts, records);
+        return new LedgerView(accounts, records, byAccount);
     }
 
     private long nextSequence() {
@@ -590,6 +600,18 @@ public final class LedgerEngine {
             throw new IllegalStateException("Out-of-order sequence " + record.sequence());
         }
         records.add(record);
+        String accountId = record instanceof Posting p ? p.accountId()
+                : record instanceof AuthorizationFact f ? f.accountId() : null;
+        if (accountId != null) {
+            byAccount.computeIfAbsent(accountId, k -> new ArrayList<>()).add(record);
+        }
+        if (record instanceof AuthorizationFact f) {
+            latestAuthorizationById.put(f.authorizationId(), f);
+        }
+        if (record instanceof Posting p && p.sourceId() != null
+                && (p.type() == PostingType.EXTERNAL_CREDIT || p.type() == PostingType.EXTERNAL_DEBIT)) {
+            principalBySourceId.putIfAbsent(p.sourceId(), p);
+        }
         return record;
     }
 

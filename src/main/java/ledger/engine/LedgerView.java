@@ -28,11 +28,30 @@ public final class LedgerView {
 
     private final Map<String, Account> accounts;
     private final List<LedgerRecord> records;
+    /** Postings and authorization facts per account, in sequence order; null when built from a plain log. */
+    private final Map<String, List<LedgerRecord>> byAccount;
 
     /** Copies both arguments, so later changes to the caller's collections never change this view. */
     public LedgerView(Map<String, Account> accounts, List<LedgerRecord> records) {
         this.accounts = Map.copyOf(accounts);
         this.records = List.copyOf(records);
+        this.byAccount = null;
+    }
+
+    /**
+     * Engine-internal view over the live log and the engine's per-account index. Nothing is copied: the engine
+     * builds one of these for every check, and copying the whole log each time made replay quadratic.
+     */
+    LedgerView(Map<String, Account> accounts, List<LedgerRecord> records,
+               Map<String, List<LedgerRecord>> byAccount) {
+        this.accounts = accounts;
+        this.records = records;
+        this.byAccount = byAccount;
+    }
+
+    /** The records a per-account query has to look at: that account's list if indexed, else the whole log. */
+    private List<LedgerRecord> recordsFor(String accountId) {
+        return byAccount == null ? records : byAccount.getOrDefault(accountId, List.of());
     }
 
     public Account account(String accountId) {
@@ -46,7 +65,7 @@ public final class LedgerView {
     /** Ledger balance: opening plus postings effective on or before the day and known by the cutoff. */
     public Money balance(String accountId, int effectiveDay, long cutoff) {
         Money total = account(accountId).opening();
-        for (LedgerRecord r : records) {
+        for (LedgerRecord r : recordsFor(accountId)) {
             if (r.sequence() > cutoff) {
                 break;
             }
@@ -64,7 +83,7 @@ public final class LedgerView {
      */
     public Money activeHolds(String accountId, int day, long cutoff) {
         Money total = Money.zero(account(accountId).currency());
-        for (LedgerRecord r : records) {
+        for (LedgerRecord r : recordsFor(accountId)) {
             if (r.sequence() > cutoff) {
                 break;
             }
